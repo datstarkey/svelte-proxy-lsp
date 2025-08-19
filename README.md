@@ -1,6 +1,23 @@
-# Svelte Proxy LSP
+# svelte-proxy-lsp
 
-A standalone LSP proxy service that combines the existing Svelte Language Server and TypeScript Language Server, providing a unified LSP interface for comprehensive Svelte development support with no client-side configuration complexity.
+A unified Language Server Protocol (LSP) proxy that intelligently combines the Svelte Language Server and TypeScript Language Server, providing comprehensive IDE support for Svelte applications with no client-side configuration complexity.
+
+## Installation
+
+### Global Installation
+```bash
+npm install -g svelte-proxy-lsp
+```
+
+### Local Installation
+```bash
+npm install --save-dev svelte-proxy-lsp
+```
+
+### Using npx (no installation required)
+```bash
+npx svelte-proxy-lsp --stdio
+```
 
 ## Architecture
 
@@ -76,22 +93,22 @@ The proxy intelligently routes requests based on where your cursor is:
 - ✅ **Formatting**: Code formatting support
 - ✅ **Diagnostics**: Real-time error and warning reporting
 
-## Installation & Usage
+## Usage
 
-### Prerequisites
-Ensure you have the underlying language servers available:
+### Command Line
 
 ```bash
-# Install globally or make sure they're in PATH
-npm install -g svelte-language-server typescript-language-server
-```
+# Using npx (no installation required)
+npx svelte-proxy-lsp --stdio
 
-### Build the Proxy
-```bash
-git clone <your-repo>
-cd svelte-proxy-lsp
-pnpm install
-pnpm build
+# After global installation
+svelte-proxy-lsp --stdio
+
+# With socket
+svelte-proxy-lsp --socket=5000
+
+# Show help
+svelte-proxy-lsp --help
 ```
 
 ### Editor Configuration
