@@ -1,7 +1,6 @@
 {
   "name": "svelte-proxy-lsp",
-  "version": "1.0.1",
-  
+  "version": "1.0.2",
   "description": "A standalone LSP proxy service combining Svelte and TypeScript language services",
   "main": "dist/server.js",
   "bin": {
