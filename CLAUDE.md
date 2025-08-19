@@ -200,43 +200,67 @@ client.didClose(createDidCloseParams(uri));
 - **Maintainability**: Direct control over protocol implementation using vscode-jsonrpc
 - **Testing Focus**: Allows tests to focus on functionality rather than protocol details
 
-### Testing Anti-Patterns and Mistakes
+### Testing Best Practices and Anti-Patterns
 
-**CRITICAL ERROR - Meaningless Assertions:**
+**CRITICAL Testing Principles:**
 
-I initially wrote several tests with `expect(true).toBe(true);` assertions, which is a serious testing anti-pattern. This is completely wrong because:
+1. **NEVER Use Conditional Passing**: Tests must have strict expectations that either pass or fail. Never write tests that conditionally pass based on whether data exists.
 
-1. **No Actual Testing**: These assertions always pass regardless of whether the code works
-2. **False Confidence**: They give the illusion of test coverage without any validation
-3. **Waste of Resources**: They consume CI time and developer attention without value
-4. **Maintenance Burden**: They create technical debt that must be fixed later
+2. **NEVER Use Try-Catch to Hide Failures**: Try-catch blocks in tests hide real errors and make tests always pass. If an async operation fails, the test should fail.
 
-**What Should Have Been Done:**
-- Test specific return values, error conditions, or state changes
-- Validate that expected data structures are returned
-- Assert that operations complete successfully with measurable outcomes
-- Test both success and failure scenarios with concrete expectations
+3. **ALWAYS Use Explicit Assertions**: Every test must have explicit `expect()` statements that validate the actual behavior.
 
-**Example of Proper Test Assertions:**
+**Common Anti-Patterns to Avoid:**
+
 ```typescript
-// WRONG - meaningless assertion
+// ❌ WRONG - Conditional passing (test always passes)
+if (result) {
+  expect(result.length).toBeGreaterThan(0);
+}
+
+// ❌ WRONG - Try-catch hiding failures
+try {
+  const result = await someOperation();
+  expect(result).toBeDefined();
+} catch (error) {
+  console.log('Operation failed'); // Test still passes!
+}
+
+// ❌ WRONG - Meaningless assertion
 expect(true).toBe(true);
 
-// CORRECT - test actual functionality
-expect(diagnosticResult).toBeDefined();
-expect(diagnosticResult.errors.length).toBeGreaterThan(0);
-expect(diagnosticResult.errors[0].message).toContain('Type mismatch');
-
-// CORRECT - test server responses
-expect(symbols).toEqual(expect.arrayContaining([
-  expect.objectContaining({
-    name: 'Person',
-    kind: expect.any(Number)
-  })
-]));
+// ❌ WRONG - No assertions at all
+const result = await someOperation();
+console.log('Got result:', result); // Not a test!
 ```
 
-This mistake has been corrected in all test files to ensure meaningful validation of LSP server functionality.
+**Correct Testing Patterns:**
+
+```typescript
+// ✅ CORRECT - Strict assertions that can fail
+const result = await someOperation();
+expect(result).toBeDefined();
+expect(result.length).toBeGreaterThan(0);
+expect(result[0]).toHaveProperty('name');
+
+// ✅ CORRECT - Let async errors fail the test
+const diagnostics = await client.getDiagnostics();
+expect(diagnostics).toBeDefined();
+expect(Array.isArray(diagnostics)).toBe(true);
+expect(diagnostics.length).toBeGreaterThan(0);
+
+// ✅ CORRECT - Test both success and failure cases
+expect(() => invalidOperation()).toThrow();
+expect(await validOperation()).toBe(expectedValue);
+```
+
+**Why This Matters:**
+- **Tests Should Fail When Things Break**: The whole point of tests is to catch problems
+- **False Positives Hide Real Issues**: Conditionally passing tests give false confidence
+- **Maintainability**: Clear assertions make it obvious what the test is validating
+- **Debugging**: When tests fail properly, the error messages help identify the problem
+
+All tests in this project follow these strict principles to ensure reliable test coverage.
 
 ## Dependencies
 
