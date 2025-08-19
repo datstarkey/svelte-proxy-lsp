@@ -56,6 +56,17 @@ export class ProxyServer {
   private svelteServer: LSPServerProcess;
   private typescriptServer: LSPServerProcess;
 
+  /**
+   * Document Synchronization Strategy:
+   * 
+   * - .svelte files → ONLY Svelte server (includes TypeScript support via typescript-svelte-plugin)
+   * - .ts/.js files → ONLY TypeScript server  
+   * - LSP requests → Route based on file type and cursor position
+   * 
+   * This prevents "Invalid languageId" and "Unexpected resource" errors from
+   * TypeScript server receiving .svelte files it can't handle.
+   */
+
   constructor() {
     // Configure Svelte Language Server with VSCode-style flags
     this.svelteServer = new LSPServerProcess({
@@ -345,6 +356,8 @@ export class ProxyServer {
     // Notify appropriate server of document close based on file type
     const closeParams = { textDocument: { uri: document.uri } };
     if (isSvelteFile(document.uri)) {
+      // Only send .svelte files to Svelte server
+      logger.trace(`Closing Svelte file in Svelte server: ${document.uri}`);
       this.svelteServer.sendNotification("textDocument/didClose", closeParams);
     } else if (
       document.uri.endsWith(".ts") ||
@@ -352,11 +365,14 @@ export class ProxyServer {
       document.uri.endsWith(".tsx") ||
       document.uri.endsWith(".jsx")
     ) {
+      // Send TypeScript/JavaScript files to TypeScript server
+      logger.trace(`Closing TypeScript file in TypeScript server: ${document.uri}`);
       this.typescriptServer.sendNotification(
         "textDocument/didClose",
         closeParams,
       );
     }
+    // Note: .svelte files are NOT sent to TypeScript server to avoid conflicts
   }
 
   private updateParsedDocument(document: TextDocument): void {
@@ -369,30 +385,40 @@ export class ProxyServer {
   }
 
   private syncDocumentOpen(document: TextDocument): void {
-    const docParams = {
-      textDocument: {
-        uri: document.uri,
-        languageId: document.languageId,
-        version: document.version,
-        text: document.getText(),
-      },
-    };
-
     // Send to appropriate server based on file type
     if (isSvelteFile(document.uri)) {
+      // Only send .svelte files to Svelte server
+      const svelteDocParams = {
+        textDocument: {
+          uri: document.uri,
+          languageId: "svelte", // Ensure correct languageId
+          version: document.version,
+          text: document.getText(),
+        },
+      };
       logger.trace(`Sending Svelte file to Svelte server: ${document.uri}`);
-      this.svelteServer.sendNotification("textDocument/didOpen", docParams);
+      this.svelteServer.sendNotification("textDocument/didOpen", svelteDocParams);
     } else if (
       document.uri.endsWith(".ts") ||
       document.uri.endsWith(".js") ||
       document.uri.endsWith(".tsx") ||
       document.uri.endsWith(".jsx")
     ) {
+      // Send TypeScript/JavaScript files to TypeScript server
+      const tsDocParams = {
+        textDocument: {
+          uri: document.uri,
+          languageId: document.languageId, // Use original languageId
+          version: document.version,
+          text: document.getText(),
+        },
+      };
       logger.trace(
         `Sending TypeScript file to TypeScript server: ${document.uri}`,
       );
-      this.typescriptServer.sendNotification("textDocument/didOpen", docParams);
+      this.typescriptServer.sendNotification("textDocument/didOpen", tsDocParams);
     }
+    // Note: .svelte files are NOT sent to TypeScript server to avoid conflicts
   }
 
   private syncDocumentChange(document: TextDocument): void {
@@ -410,6 +436,8 @@ export class ProxyServer {
 
     // Send change notifications to appropriate server based on file type
     if (isSvelteFile(document.uri)) {
+      // Only send .svelte files to Svelte server
+      logger.trace(`Sending Svelte file change to Svelte server: ${document.uri}`);
       this.svelteServer.sendNotification(
         "textDocument/didChange",
         changeParams,
@@ -420,11 +448,14 @@ export class ProxyServer {
       document.uri.endsWith(".tsx") ||
       document.uri.endsWith(".jsx")
     ) {
+      // Send TypeScript/JavaScript files to TypeScript server
+      logger.trace(`Sending TypeScript file change to TypeScript server: ${document.uri}`);
       this.typescriptServer.sendNotification(
         "textDocument/didChange",
         changeParams,
       );
     }
+    // Note: .svelte files are NOT sent to TypeScript server to avoid conflicts
   }
 
   private async onCompletion(
