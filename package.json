@@ -4,7 +4,7 @@
   "description": "A standalone LSP proxy service combining Svelte and TypeScript language services",
   "main": "dist/server.js",
   "bin": {
-    "svelte-proxy-lsp": "dist/server.js"
+    "svelte-proxy-lsp": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
@@ -14,17 +14,40 @@
     "clean": "rm -rf dist",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:integration": "jest --config jest.integration.config.js"
+    "test:integration": "jest --config jest.integration.config.js",
+    "prepublishOnly": "npm run clean && npm run build && npm test",
+    "postpublish": "echo 'Published successfully!'",
+    "pack:local": "npm pack"
   },
   "keywords": [
     "svelte",
     "typescript",
     "lsp",
     "language-server",
-    "proxy"
+    "proxy",
+    "language-server-protocol",
+    "svelte-language-server",
+    "typescript-language-server"
   ],
   "author": "",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/svelte-proxy-lsp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/svelte-proxy-lsp/issues"
+  },
+  "homepage": "https://github.com/yourusername/svelte-proxy-lsp#readme",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "LICENSE",
+    "package.json"
+  ],
   "dependencies": {
     "svelte-language-server": "^0.16.14",
     "typescript-language-server": "^4.3.3",
