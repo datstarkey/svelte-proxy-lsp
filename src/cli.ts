@@ -33,7 +33,7 @@ Examples:
   # Use via npx without installation
   npx svelte-proxy-lsp --stdio
 
-For more information, visit: https://github.com/yourusername/svelte-proxy-lsp
+For more information, visit: https://github.com/datstarkey/svelte-proxy-lsp
 `;
 
 // Check for help flag

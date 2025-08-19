@@ -1,6 +1,7 @@
 {
   "name": "svelte-proxy-lsp",
   "version": "1.0.0",
+  
   "description": "A standalone LSP proxy service combining Svelte and TypeScript language services",
   "main": "dist/server.js",
   "bin": {
@@ -29,16 +30,16 @@
     "svelte-language-server",
     "typescript-language-server"
   ],
-  "author": "",
+  "author": "Jake Starkey <jakestarkey@gmail.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/svelte-proxy-lsp.git"
+    "url": "https://github.com/datstarkey/svelte-proxy-lsp.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/svelte-proxy-lsp/issues"
+    "url": "https://github.com/datstarkey/svelte-proxy-lsp/issues"
   },
-  "homepage": "https://github.com/yourusername/svelte-proxy-lsp#readme",
+  "homepage": "https://github.com/datstarkey/svelte-proxy-lsp#readme",
   "engines": {
     "node": ">=16.0.0"
   },
