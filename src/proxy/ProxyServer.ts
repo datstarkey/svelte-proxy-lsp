@@ -405,10 +405,20 @@ export class ProxyServer {
       document.uri.endsWith(".jsx")
     ) {
       // Send TypeScript/JavaScript files to TypeScript server
+      // Normalize languageId based on file extension to avoid client inconsistencies
+      let normalizedLanguageId = "typescript";
+      if (document.uri.endsWith(".js")) {
+        normalizedLanguageId = "javascript";
+      } else if (document.uri.endsWith(".jsx")) {
+        normalizedLanguageId = "javascriptreact";
+      } else if (document.uri.endsWith(".tsx")) {
+        normalizedLanguageId = "typescriptreact";
+      }
+      
       const tsDocParams = {
         textDocument: {
           uri: document.uri,
-          languageId: document.languageId, // Use original languageId
+          languageId: normalizedLanguageId, // Use normalized languageId
           version: document.version,
           text: document.getText(),
         },
