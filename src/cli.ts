@@ -59,9 +59,35 @@ if (args.length === 0 || (!args.includes('--stdio') &&
 
 // Import and start the server
 import('./server').then(() => {
-  // The server module will handle the startup
-  console.error('Svelte Proxy LSP Server starting...');
+  // The server.ts exports the main function by default when run directly
+  // But when imported, we need to manually start the proxy
+  const { ProxyServer } = require('./proxy/ProxyServer');
+  
+  async function startServer() {
+    const server = new ProxyServer();
+    
+    // Handle graceful shutdown
+    const shutdown = async () => {
+      console.error('Shutting down Svelte Proxy LSP...');
+      await server.stop();
+      process.exit(0);
+    };
+    
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
+    process.on('SIGHUP', shutdown);
+    
+    try {
+      console.error('Svelte Proxy LSP Server starting...');
+      await server.start();
+    } catch (error) {
+      console.error('Failed to start Svelte Proxy LSP:', error);
+      process.exit(1);
+    }
+  }
+  
+  startServer();
 }).catch((error) => {
-  console.error('Failed to start Svelte Proxy LSP Server:', error);
+  console.error('Failed to load Svelte Proxy LSP Server:', error);
   process.exit(1);
 });
