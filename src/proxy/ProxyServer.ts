@@ -1,24 +1,39 @@
 import {
   CodeAction,
   CodeActionParams,
+  CodeLens,
+  CodeLensParams,
   CompletionItem,
   createConnection,
+  DeclarationParams,
   DocumentFormattingParams,
+  DocumentHighlight,
+  DocumentHighlightParams,
   DocumentSymbol,
   DocumentSymbolParams,
+  FoldingRange,
+  FoldingRangeParams,
   Hover,
+  ImplementationParams,
   InitializeParams,
   InitializeResult,
   Location,
+  PrepareRenameParams,
   ProposedFeatures,
+  Range,
   ReferenceParams,
   RenameParams,
+  SelectionRange,
+  SelectionRangeParams,
   SignatureHelp,
   TextDocumentPositionParams,
   TextDocuments,
   TextDocumentSyncKind,
   TextEdit,
+  TypeDefinitionParams,
   WorkspaceEdit,
+  type SymbolInformation,
+  type WorkspaceSymbolParams,
 } from "vscode-languageserver/node";
 
 import { TextDocument } from "vscode-languageserver-textdocument";
@@ -82,6 +97,21 @@ export class ProxyServer {
     this.connection.onCodeAction(this.onCodeAction.bind(this));
     this.connection.onRenameRequest(this.onRename.bind(this));
     this.connection.onDocumentFormatting(this.onDocumentFormatting.bind(this));
+    this.connection.onWorkspaceSymbol(this.onWorkspaceSymbol.bind(this));
+
+    // Additional LSP methods that could be proxied
+    this.connection.onTypeDefinition(this.onTypeDefinition.bind(this));
+    this.connection.onImplementation(this.onImplementation.bind(this));
+    this.connection.onDeclaration(this.onDeclaration.bind(this));
+    this.connection.onDocumentHighlight(this.onDocumentHighlight.bind(this));
+    this.connection.onPrepareRename(this.onPrepareRename.bind(this));
+    this.connection.onCompletionResolve(this.onCompletionResolve.bind(this));
+
+    // Code lens and folding support
+    this.connection.onCodeLens(this.onCodeLens.bind(this));
+    this.connection.onCodeLensResolve(this.onCodeLensResolve.bind(this));
+    this.connection.onFoldingRanges(this.onFoldingRanges.bind(this));
+    this.connection.onSelectionRanges(this.onSelectionRanges.bind(this));
 
     this.documents.listen(this.connection);
   }
@@ -625,27 +655,49 @@ export class ProxyServer {
 
     const results: DocumentSymbol[] = [];
 
-    // Get symbols from both servers for Svelte files
+    // Query both servers concurrently for better performance
     if (isSvelteFile(parsed.uri)) {
+      // For Svelte files, query both servers in parallel
+      const [svelteResults, tsResults] = await Promise.all([
+        this.svelteServer
+          .sendRequest<
+            typeof params,
+            DocumentSymbol[]
+          >("textDocument/documentSymbol", params)
+          .catch((error) => {
+            console.error("Svelte document symbol error:", error);
+            return null;
+          }),
+
+        this.typescriptServer
+          .sendRequest<
+            typeof params,
+            DocumentSymbol[]
+          >("textDocument/documentSymbol", params)
+          .catch((error) => {
+            console.error("TypeScript document symbol error:", error);
+            return null;
+          }),
+      ]);
+
+      // Add results from both servers
+      if (svelteResults) {
+        results.push(...svelteResults);
+      }
+      if (tsResults) {
+        results.push(...tsResults);
+      }
+    } else {
+      // For non-Svelte files, only query TypeScript server
       try {
-        const svelteResults = await this.svelteServer.sendRequest<
+        const tsResults = await this.typescriptServer.sendRequest<
           typeof params,
           DocumentSymbol[]
         >("textDocument/documentSymbol", params);
-        results.push(...(svelteResults || []));
+        results.push(...(tsResults || []));
       } catch (error) {
-        console.error("Svelte document symbol error:", error);
+        console.error("TypeScript document symbol error:", error);
       }
-    }
-
-    try {
-      const tsResults = await this.typescriptServer.sendRequest<
-        typeof params,
-        DocumentSymbol[]
-      >("textDocument/documentSymbol", params);
-      results.push(...(tsResults || []));
-    } catch (error) {
-      console.error("TypeScript document symbol error:", error);
     }
 
     return results;
@@ -715,6 +767,53 @@ export class ProxyServer {
     return null;
   }
 
+  private async onWorkspaceSymbol(
+    params: WorkspaceSymbolParams,
+  ): Promise<SymbolInformation[]> {
+    const results: SymbolInformation[] = [];
+
+    // Query both servers for workspace symbols concurrently for better performance
+    // This allows finding symbols from both TypeScript files and Svelte files
+
+    const [tsResults, svelteResults] = await Promise.all([
+      // Query TypeScript server for symbols
+      this.typescriptServer
+        .sendRequest<
+          typeof params,
+          SymbolInformation[]
+        >("workspace/symbol", params)
+        .catch((error) => {
+          console.error("TypeScript workspace symbol error:", error);
+          return null;
+        }),
+
+      // Query Svelte server for symbols
+      this.svelteServer
+        .sendRequest<
+          typeof params,
+          SymbolInformation[]
+        >("workspace/symbol", params)
+        .catch((error) => {
+          console.error("Svelte workspace symbol error:", error);
+          return null;
+        }),
+    ]);
+
+    // Add results from both servers
+    if (tsResults && Array.isArray(tsResults)) {
+      results.push(...tsResults);
+    }
+
+    if (svelteResults && Array.isArray(svelteResults)) {
+      results.push(...svelteResults);
+    }
+
+    // Deduplicate symbols by name and location
+    const uniqueSymbols = this.deduplicateWorkspaceSymbols(results);
+
+    return uniqueSymbols;
+  }
+
   private async onDocumentFormatting(
     params: DocumentFormattingParams,
   ): Promise<TextEdit[]> {
@@ -773,13 +872,240 @@ export class ProxyServer {
           ],
         },
         definitionProvider: true,
+        typeDefinitionProvider: true,
+        implementationProvider: true,
+        declarationProvider: true,
         referencesProvider: true,
+        documentHighlightProvider: true,
         documentSymbolProvider: true,
+        workspaceSymbolProvider: true,
         codeActionProvider: true,
-        renameProvider: true,
+        codeLensProvider: {
+          resolveProvider: true,
+        },
         documentFormattingProvider: true,
+        renameProvider: {
+          prepareProvider: true,
+        },
+        foldingRangeProvider: true,
+        selectionRangeProvider: true,
       },
     };
+  }
+
+  // Additional LSP method implementations
+  private async onTypeDefinition(
+    params: TypeDefinitionParams,
+  ): Promise<Location[]> {
+    const parsed = this.parsedDocuments.get(params.textDocument.uri);
+    if (!parsed) return [];
+
+    const results: Location[] = [];
+
+    if (shouldUseTypeScriptServer(parsed, params.position)) {
+      try {
+        const tsResults = await this.typescriptServer.sendRequest<
+          typeof params,
+          Location[]
+        >("textDocument/typeDefinition", params);
+        results.push(...(tsResults || []));
+      } catch (error) {
+        console.error("TypeScript type definition error:", error);
+      }
+    }
+
+    if (shouldUseSvelteServer(parsed, params.position)) {
+      try {
+        const svelteResults = await this.svelteServer.sendRequest<
+          typeof params,
+          Location[]
+        >("textDocument/typeDefinition", params);
+        results.push(...(svelteResults || []));
+      } catch (error) {
+        console.error("Svelte type definition error:", error);
+      }
+    }
+
+    return this.deduplicateLocations(results);
+  }
+
+  private async onImplementation(
+    params: ImplementationParams,
+  ): Promise<Location[]> {
+    const parsed = this.parsedDocuments.get(params.textDocument.uri);
+    if (!parsed) return [];
+
+    const results: Location[] = [];
+
+    if (shouldUseTypeScriptServer(parsed, params.position)) {
+      try {
+        const tsResults = await this.typescriptServer.sendRequest<
+          typeof params,
+          Location[]
+        >("textDocument/implementation", params);
+        results.push(...(tsResults || []));
+      } catch (error) {
+        console.error("TypeScript implementation error:", error);
+      }
+    }
+
+    if (shouldUseSvelteServer(parsed, params.position)) {
+      try {
+        const svelteResults = await this.svelteServer.sendRequest<
+          typeof params,
+          Location[]
+        >("textDocument/implementation", params);
+        results.push(...(svelteResults || []));
+      } catch (error) {
+        console.error("Svelte implementation error:", error);
+      }
+    }
+
+    return this.deduplicateLocations(results);
+  }
+
+  private async onDeclaration(params: DeclarationParams): Promise<Location[]> {
+    const parsed = this.parsedDocuments.get(params.textDocument.uri);
+    if (!parsed) return [];
+
+    const results: Location[] = [];
+
+    if (shouldUseTypeScriptServer(parsed, params.position)) {
+      try {
+        const tsResults = await this.typescriptServer.sendRequest<
+          typeof params,
+          Location[]
+        >("textDocument/declaration", params);
+        results.push(...(tsResults || []));
+      } catch (error) {
+        console.error("TypeScript declaration error:", error);
+      }
+    }
+
+    if (shouldUseSvelteServer(parsed, params.position)) {
+      try {
+        const svelteResults = await this.svelteServer.sendRequest<
+          typeof params,
+          Location[]
+        >("textDocument/declaration", params);
+        results.push(...(svelteResults || []));
+      } catch (error) {
+        console.error("Svelte declaration error:", error);
+      }
+    }
+
+    return this.deduplicateLocations(results);
+  }
+
+  private async onDocumentHighlight(
+    params: DocumentHighlightParams,
+  ): Promise<DocumentHighlight[]> {
+    const parsed = this.parsedDocuments.get(params.textDocument.uri);
+    if (!parsed) return [];
+
+    const results: DocumentHighlight[] = [];
+
+    if (shouldUseTypeScriptServer(parsed, params.position)) {
+      try {
+        const tsResults = await this.typescriptServer.sendRequest<
+          typeof params,
+          DocumentHighlight[]
+        >("textDocument/documentHighlight", params);
+        results.push(...(tsResults || []));
+      } catch (error) {
+        console.error("TypeScript document highlight error:", error);
+      }
+    }
+
+    if (shouldUseSvelteServer(parsed, params.position)) {
+      try {
+        const svelteResults = await this.svelteServer.sendRequest<
+          typeof params,
+          DocumentHighlight[]
+        >("textDocument/documentHighlight", params);
+        results.push(...(svelteResults || []));
+      } catch (error) {
+        console.error("Svelte document highlight error:", error);
+      }
+    }
+
+    return results; // Document highlights don't need deduplication
+  }
+
+  private async onPrepareRename(
+    params: PrepareRenameParams,
+  ): Promise<Range | { range: Range; placeholder: string } | null> {
+    const parsed = this.parsedDocuments.get(params.textDocument.uri);
+    if (!parsed) return null;
+
+    // Try TypeScript first for prepare rename
+    if (shouldUseTypeScriptServer(parsed, params.position)) {
+      try {
+        const tsResult = await this.typescriptServer.sendRequest<
+          typeof params,
+          Range | { range: Range; placeholder: string } | null
+        >("textDocument/prepareRename", params);
+        if (tsResult) return tsResult;
+      } catch (error) {
+        console.error("TypeScript prepare rename error:", error);
+      }
+    }
+
+    // Fallback to Svelte server
+    if (shouldUseSvelteServer(parsed, params.position)) {
+      try {
+        const svelteResult = await this.svelteServer.sendRequest<
+          typeof params,
+          Range | { range: Range; placeholder: string } | null
+        >("textDocument/prepareRename", params);
+        if (svelteResult) return svelteResult;
+      } catch (error) {
+        console.error("Svelte prepare rename error:", error);
+      }
+    }
+
+    return null;
+  }
+
+  private async onCompletionResolve(
+    item: CompletionItem,
+  ): Promise<CompletionItem> {
+    // Try to resolve with the server that likely provided the completion
+    // This is a best-effort approach since we don't track which server provided which item
+
+    try {
+      // Try TypeScript first (more likely to have resolve information)
+      const tsResult = await this.typescriptServer.sendRequest<
+        CompletionItem,
+        CompletionItem
+      >("completionItem/resolve", item);
+      if (
+        tsResult &&
+        (tsResult.detail ||
+          tsResult.documentation ||
+          tsResult.additionalTextEdits)
+      ) {
+        return tsResult;
+      }
+    } catch (error) {
+      console.error("TypeScript completion resolve error:", error);
+    }
+
+    try {
+      // Fallback to Svelte server
+      const svelteResult = await this.svelteServer.sendRequest<
+        CompletionItem,
+        CompletionItem
+      >("completionItem/resolve", item);
+      if (svelteResult) {
+        return svelteResult;
+      }
+    } catch (error) {
+      console.error("Svelte completion resolve error:", error);
+    }
+
+    // Return original item if resolve failed
+    return item;
   }
 
   private deduplicateCompletions(
@@ -802,6 +1128,218 @@ export class ProxyServer {
       seen.add(key);
       return true;
     });
+  }
+
+  private deduplicateWorkspaceSymbols(
+    symbols: SymbolInformation[],
+  ): SymbolInformation[] {
+    const seen = new Set<string>();
+    return symbols.filter((symbol) => {
+      // Create unique key based on symbol name, kind, and location
+      const location = symbol.location;
+      const key = `${symbol.name}:${symbol.kind}:${location.uri}:${location.range.start.line}:${location.range.start.character}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  private async onCodeLens(params: CodeLensParams): Promise<CodeLens[]> {
+    const parsed = this.parsedDocuments.get(params.textDocument.uri);
+    if (!parsed) return [];
+
+    const results: CodeLens[] = [];
+
+    // Query both servers concurrently for code lens data
+    if (isSvelteFile(parsed.uri)) {
+      // For Svelte files, query both servers in parallel
+      const [svelteResults, tsResults] = await Promise.all([
+        this.svelteServer
+          .sendRequest<
+            typeof params,
+            CodeLens[]
+          >("textDocument/codeLens", params)
+          .catch((error) => {
+            console.error("Svelte code lens error:", error);
+            return null;
+          }),
+
+        this.typescriptServer
+          .sendRequest<
+            typeof params,
+            CodeLens[]
+          >("textDocument/codeLens", params)
+          .catch((error) => {
+            console.error("TypeScript code lens error:", error);
+            return null;
+          }),
+      ]);
+
+      // Add results from both servers
+      if (svelteResults) {
+        results.push(...svelteResults);
+      }
+      if (tsResults) {
+        results.push(...tsResults);
+      }
+    } else {
+      // For non-Svelte files, only query TypeScript server
+      try {
+        const tsResults = await this.typescriptServer.sendRequest<
+          typeof params,
+          CodeLens[]
+        >("textDocument/codeLens", params);
+        results.push(...(tsResults || []));
+      } catch (error) {
+        console.error("TypeScript code lens error:", error);
+      }
+    }
+
+    return results;
+  }
+
+  private async onCodeLensResolve(lens: CodeLens): Promise<CodeLens> {
+    // Try to resolve with both servers (similar to completion resolve approach)
+    try {
+      // Try TypeScript first (more likely to have resolve information)
+      const tsResult = await this.typescriptServer.sendRequest<
+        CodeLens,
+        CodeLens
+      >("codeLens/resolve", lens);
+      if (tsResult && tsResult.command) {
+        return tsResult;
+      }
+    } catch (error) {
+      console.error("TypeScript code lens resolve error:", error);
+    }
+
+    try {
+      // Fallback to Svelte server
+      const svelteResult = await this.svelteServer.sendRequest<
+        CodeLens,
+        CodeLens
+      >("codeLens/resolve", lens);
+      if (svelteResult) {
+        return svelteResult;
+      }
+    } catch (error) {
+      console.error("Svelte code lens resolve error:", error);
+    }
+
+    // Return original lens if resolve failed
+    return lens;
+  }
+
+  private async onFoldingRanges(
+    params: FoldingRangeParams,
+  ): Promise<FoldingRange[]> {
+    const parsed = this.parsedDocuments.get(params.textDocument.uri);
+    if (!parsed) return [];
+
+    const results: FoldingRange[] = [];
+
+    // Query both servers concurrently for folding ranges
+    if (isSvelteFile(parsed.uri)) {
+      // For Svelte files, query both servers in parallel
+      const [svelteResults, tsResults] = await Promise.all([
+        this.svelteServer
+          .sendRequest<
+            typeof params,
+            FoldingRange[]
+          >("textDocument/foldingRange", params)
+          .catch((error) => {
+            console.error("Svelte folding range error:", error);
+            return null;
+          }),
+
+        this.typescriptServer
+          .sendRequest<
+            typeof params,
+            FoldingRange[]
+          >("textDocument/foldingRange", params)
+          .catch((error) => {
+            console.error("TypeScript folding range error:", error);
+            return null;
+          }),
+      ]);
+
+      // Add results from both servers
+      if (svelteResults) {
+        results.push(...svelteResults);
+      }
+      if (tsResults) {
+        results.push(...tsResults);
+      }
+    } else {
+      // For non-Svelte files, only query TypeScript server
+      try {
+        const tsResults = await this.typescriptServer.sendRequest<
+          typeof params,
+          FoldingRange[]
+        >("textDocument/foldingRange", params);
+        results.push(...(tsResults || []));
+      } catch (error) {
+        console.error("TypeScript folding range error:", error);
+      }
+    }
+
+    return results;
+  }
+
+  private async onSelectionRanges(
+    params: SelectionRangeParams,
+  ): Promise<SelectionRange[]> {
+    const parsed = this.parsedDocuments.get(params.textDocument.uri);
+    if (!parsed) return [];
+
+    // Use position-based routing for selection ranges
+    const results: SelectionRange[] = [];
+
+    // Process each position and route to appropriate server
+    for (const position of params.positions) {
+      const useSvelte = shouldUseSvelteServer(parsed, position);
+      const useTypeScript = shouldUseTypeScriptServer(parsed, position);
+
+      if (useTypeScript) {
+        try {
+          const tsResults = await this.typescriptServer.sendRequest<
+            {
+              textDocument: typeof params.textDocument;
+              positions: [typeof position];
+            },
+            SelectionRange[]
+          >("textDocument/selectionRange", {
+            textDocument: params.textDocument,
+            positions: [position],
+          });
+          if (tsResults && tsResults.length > 0) {
+            results.push(tsResults[0]);
+          }
+        } catch (error) {
+          console.error("TypeScript selection range error:", error);
+        }
+      } else if (useSvelte) {
+        try {
+          const svelteResults = await this.svelteServer.sendRequest<
+            {
+              textDocument: typeof params.textDocument;
+              positions: [typeof position];
+            },
+            SelectionRange[]
+          >("textDocument/selectionRange", {
+            textDocument: params.textDocument,
+            positions: [position],
+          });
+          if (svelteResults && svelteResults.length > 0) {
+            results.push(svelteResults[0]);
+          }
+        } catch (error) {
+          console.error("Svelte selection range error:", error);
+        }
+      }
+    }
+
+    return results;
   }
 
   // Test methods (expose private methods for testing)
