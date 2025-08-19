@@ -100,11 +100,11 @@ pnpm test -- --testPathPattern="document-symbols"
   - Used by integration tests to verify cross-file functionality
 
 - **Test Utilities** (`tests/utils/`) - Shared testing utilities
-  - `TypedLSPClient.ts` - Strongly typed LSP client using ts-lsp-client library for robust testing with full TypeScript type safety
+  - `TypedLSPClient.ts` - Strongly typed LSP client using vscode-jsonrpc directly for robust testing with full TypeScript type safety
 
 ### Test Results
 
-**Total: 46 passing tests, 1 skipped**
+**Total: 47 passing tests, 1 skipped**
 
 **Unit Tests (26 passing):**
 - ✅ Document Parser (16 tests) - Svelte file parsing, region detection, file type routing
@@ -114,7 +114,7 @@ pnpm test -- --testPathPattern="document-symbols"
 - ✅ Typed LSP Client (3 tests, 1 skipped) - Server initialization, TypeScript operations, real file processing  
 - ✅ Person Type Test (2 tests) - Verifies server processes TypeScript types in Svelte components
 - ✅ External Person Type Test (2 tests) - Tests cross-file type imports and complex type hierarchies
-- ✅ Diagnostics Test (2 tests) - TypeScript error detection in Svelte files and cross-file validation
+- ✅ Diagnostics Test (3 tests) - TypeScript error detection in Svelte files, cross-file validation, and error-free file handling
 - ✅ Symbol Insertion Test (3 tests) - Code completions, auto-imports, and Svelte-specific syntax
 - ✅ Workspace Symbols Test (4 tests) - Workspace symbol search, fuzzy matching, wildcard queries
 - ✅ Document Symbols Test (4 tests) - Symbol extraction from Svelte/TypeScript files with ranges
@@ -125,7 +125,7 @@ pnpm test -- --testPathPattern="document-symbols"
 - **Real Server Testing**: Tests use `tsx src/server.ts` to run the actual server
 - **TypeScript Type Processing**: Validates the server can handle TypeScript types within Svelte files
 - **Cross-file Type Imports**: Tests complex type hierarchies imported from external TypeScript files
-- **LSP Protocol Compliance**: Tests using strongly typed ts-lsp-client for protocol compliance
+- **LSP Protocol Compliance**: Tests using strongly typed vscode-jsonrpc for protocol compliance
 - **Realistic Application Structure**: Tests with actual SvelteKit project layout
 - **Diagnostic Validation**: Tests TypeScript error detection and cross-file validation
 - **Symbol Operations**: Tests code completions, auto-imports, workspace search, document symbols
@@ -152,12 +152,12 @@ The test app provides realistic files to test completions, hover, and other LSP 
 
 ### TypedLSPClient Test Utility
 
-The `tests/utils/TypedLSPClient.ts` provides a strongly typed LSP client using the ts-lsp-client library for all integration tests:
+The `tests/utils/TypedLSPClient.ts` provides a strongly typed LSP client using vscode-jsonrpc directly for all integration tests:
 
 **Features:**
-- **Strong Type Safety**: Full TypeScript types for all LSP protocol messages using ts-lsp-client and vscode-languageserver-protocol
-- **Built on ts-lsp-client**: Uses the robust ts-lsp-client library for reliability and protocol compliance
-- **Diagnostic Handling**: Built-in support for capturing and waiting for diagnostics with timeout support
+- **Strong Type Safety**: Full TypeScript types for all LSP protocol messages using vscode-jsonrpc and vscode-languageserver-protocol
+- **Direct JSON-RPC Communication**: Uses vscode-jsonrpc directly for better control and reliability
+- **Diagnostic Handling**: Built-in support for both push-based and pull-based diagnostics (LSP 3.17+) with intelligent fallback
 - **Error Recovery**: Graceful error handling with null returns instead of exceptions
 - **Helper Functions**: Utility functions for creating LSP protocol objects (Position, Range, TextDocumentIdentifier, etc.)
 - **Process Management**: Tracks server process lifecycle and provides cleanup methods
@@ -197,7 +197,7 @@ client.didClose(createDidCloseParams(uri));
 - **Type Safety**: Catches type mismatches at compile time rather than runtime
 - **Protocol Compliance**: Ensures all requests follow LSP specification exactly
 - **Better IDE Support**: Full autocomplete and IntelliSense for all LSP methods
-- **Maintainability**: Changes to LSP protocol are handled by updating ts-lsp-client dependency
+- **Maintainability**: Direct control over protocol implementation using vscode-jsonrpc
 - **Testing Focus**: Allows tests to focus on functionality rather than protocol details
 
 ### Testing Anti-Patterns and Mistakes

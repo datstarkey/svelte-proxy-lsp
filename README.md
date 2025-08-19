@@ -187,29 +187,34 @@ pnpm start          # Start the proxy server
 ```
 
 ### Testing
+
+The project includes comprehensive unit and integration tests:
+
 ```bash
-# Create a test Svelte file
-echo '<script lang="ts">
-  let name: string = "world";
-  function greet() {
-    console.log(`Hello ${name}!`);
-  }
-</script>
+# Run all tests (47 passing, 1 skipped)
+pnpm test
 
-<main>
-  <h1>Hello {name}!</h1>
-  <button on:click={greet}>Greet</button>
-</main>
+# Run tests in watch mode
+pnpm test:watch
 
-<style>
-  main { 
-    text-align: center; 
-    padding: 1em;
-  }
-</style>' > test.svelte
+# Run specific test suites
+pnpm test -- --testPathPattern="diagnostics"
+pnpm test -- --testPathPattern="symbol-insertion"
+pnpm test -- --testPathPattern="workspace-symbols"
+```
 
-# Start the proxy (needs LSP client to test)
-node dist/server.js --stdio
+#### Test Coverage
+- **Unit Tests**: 26 tests covering document parsing and process management
+- **Integration Tests**: 21 tests validating real LSP server interactions
+- **Test Features**: TypeScript type processing, cross-file imports, diagnostics, completions, symbols
+
+For manual testing:
+```bash
+# Start the proxy directly
+npx tsx src/server.ts --stdio
+
+# Or build and run
+pnpm build && pnpm start --stdio
 ```
 
 ## Configuration
@@ -228,7 +233,10 @@ The proxy automatically finds language servers in this order:
   - `svelte-language-server@^0.16.14`
   - `typescript-language-server@^4.3.3`
   - `typescript-svelte-plugin@^0.3.40` (automatically configured)
-- **LSP Libraries**: vscode-languageserver, vscode-jsonrpc
+- **LSP Protocol Implementation**:
+  - `vscode-languageserver@^10.0.0` - LSP protocol types and utilities
+  - `vscode-jsonrpc@^9.0.0-next.8` - Direct JSON-RPC communication
+  - `vscode-languageserver-protocol@^3.17.6` - Protocol definitions
 
 ## Benefits
 
