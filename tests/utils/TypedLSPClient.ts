@@ -3,62 +3,95 @@ import { EventEmitter } from "events";
 import {
   createMessageConnection,
   MessageConnection,
-  NotificationType,
-  RequestType,
   StreamMessageReader,
   StreamMessageWriter,
 } from "vscode-jsonrpc/node";
 
 import {
+  ApplyWorkspaceEditParams,
+  ApplyWorkspaceEditRequest,
   CodeAction,
   CodeActionContext,
   CodeActionParams,
+  CodeActionRequest,
+  CodeActionResolveRequest,
   CodeLens,
   CodeLensParams,
+  CodeLensRequest,
+  CodeLensResolveRequest,
   Command,
   CompletionItem,
   CompletionList,
   CompletionParams,
+  CompletionRequest,
+  CompletionResolveRequest,
   DeclarationParams,
+  DeclarationRequest,
+  DefinitionRequest,
   Diagnostic,
+  DidChangeTextDocumentNotification,
   DidChangeTextDocumentParams,
+  DidCloseTextDocumentNotification,
   DidCloseTextDocumentParams,
+  DidOpenTextDocumentNotification,
   DidOpenTextDocumentParams,
+  DidSaveTextDocumentNotification,
   DocumentFormattingParams,
+  DocumentFormattingRequest,
   DocumentHighlight,
   DocumentHighlightParams,
+  DocumentHighlightRequest,
   DocumentLink,
   DocumentLinkParams,
+  DocumentLinkRequest,
+  DocumentLinkResolveRequest,
   DocumentOnTypeFormattingParams,
+  DocumentOnTypeFormattingRequest,
   DocumentRangeFormattingParams,
+  DocumentRangeFormattingRequest,
   DocumentSymbol,
   DocumentSymbolParams,
+  DocumentSymbolRequest,
   ExecuteCommandParams,
+  ExecuteCommandRequest,
+  ExitNotification,
   FoldingRange,
   FoldingRangeParams,
+  FoldingRangeRequest,
   FormattingOptions,
   Hover,
   HoverParams,
+  HoverRequest,
   ImplementationParams,
+  ImplementationRequest,
   InitializeParams,
+  InitializeRequest,
   InitializeResult,
+  InitializedNotification,
   Location,
   LocationLink,
   LogMessageNotification,
   Position,
   PrepareRenameParams,
+  PrepareRenameRequest,
   PublishDiagnosticsNotification,
   PublishDiagnosticsParams,
   Range,
   ReferenceParams,
+  ReferencesRequest,
   RenameParams,
+  RenameRequest,
   SelectionRange,
   SelectionRangeParams,
+  SelectionRangeRequest,
   SemanticTokens,
   SemanticTokensParams,
+  SemanticTokensRequest,
   ShowMessageNotification,
+  ShutdownRequest,
   SignatureHelp,
   SignatureHelpParams,
+  SignatureHelpRequest,
   SymbolInformation,
   TelemetryEventNotification,
   TextDocumentContentChangeEvent,
@@ -67,11 +100,16 @@ import {
   TextDocumentPositionParams,
   TextEdit,
   TypeDefinitionParams,
+  TypeDefinitionRequest,
   VersionedTextDocumentIdentifier,
+  WillSaveTextDocumentNotification,
+  WillSaveTextDocumentWaitUntilRequest,
   WorkspaceEdit,
   WorkspaceSymbolParams,
+  WorkspaceSymbolRequest,
   type LogMessageParams,
   type ShowMessageParams,
+  type WorkspaceSymbol,
 } from "vscode-languageserver-protocol";
 
 /**
@@ -173,40 +211,7 @@ export class TypedLSPClient extends EventEmitter {
     this.emit("textDocument/publishDiagnostics", params);
   }
 
-  // ===== Request/Notification Helpers =====
-
-  private async sendRequest<P, R>(method: string, params?: P): Promise<R> {
-    if (!this.connection) {
-      throw new Error("Connection not established");
-    }
-
-    const requestId = this.requestIdCounter++;
-    this.pendingRequests.set(requestId, method);
-    this.logger.debug(`Sending request #${requestId}: ${method}`);
-
-    try {
-      const requestType = new RequestType<P, R, any>(method);
-      const result = await this.connection.sendRequest(requestType, params!);
-      this.pendingRequests.delete(requestId);
-      this.logger.debug(`Request #${requestId} completed: ${method}`);
-      return result;
-    } catch (error) {
-      this.pendingRequests.delete(requestId);
-      this.logger.error(`Request #${requestId} failed: ${method}`, error);
-      throw error;
-    }
-  }
-
-  private sendNotification<P>(method: string, params?: P): void {
-    if (!this.connection) {
-      this.logger.warn("Cannot send notification - no connection");
-      return;
-    }
-
-    const notificationType = new NotificationType<P>(method);
-    this.connection.sendNotification(notificationType, params!);
-    this.logger.debug(`Sent notification: ${method}`);
-  }
+  // ===== Helper Methods =====
 
   // ===== Lifecycle Methods =====
 
@@ -214,9 +219,12 @@ export class TypedLSPClient extends EventEmitter {
    * Initialize the language server
    */
   async initialize(params: InitializeParams): Promise<InitializeResult> {
+    if (!this.connection) {
+      throw new Error("Connection not established");
+    }
     this.logger.info("Initializing language server");
-    const result = await this.sendRequest<InitializeParams, InitializeResult>(
-      "initialize",
+    const result = await this.connection.sendRequest(
+      InitializeRequest.type,
       params,
     );
     this.isInitialized = true;
@@ -227,8 +235,12 @@ export class TypedLSPClient extends EventEmitter {
    * Send initialized notification
    */
   initialized(): void {
+    if (!this.connection) {
+      this.logger.warn("Cannot send initialized - no connection");
+      return;
+    }
     this.logger.info("Sending initialized notification");
-    this.sendNotification("initialized", {});
+    this.connection.sendNotification(InitializedNotification.type, {});
   }
 
   /**
@@ -241,7 +253,7 @@ export class TypedLSPClient extends EventEmitter {
     }
     this.logger.info("Shutting down language server");
     try {
-      await this.sendRequest<void, void>("shutdown");
+      await this.connection.sendRequest(ShutdownRequest.type);
     } catch (error) {
       this.logger.error("Shutdown request failed", error);
     }
@@ -258,7 +270,7 @@ export class TypedLSPClient extends EventEmitter {
     }
     this.logger.info("Sending exit notification");
     try {
-      this.sendNotification("exit");
+      this.connection.sendNotification(ExitNotification.type);
     } catch (error) {
       this.logger.error("Exit notification failed", error);
     }
@@ -270,16 +282,24 @@ export class TypedLSPClient extends EventEmitter {
    * Open a text document
    */
   didOpen(params: DidOpenTextDocumentParams): void {
+    if (!this.connection) {
+      this.logger.warn("Cannot send didOpen - no connection");
+      return;
+    }
     this.logger.debug(`Opening document: ${params.textDocument.uri}`);
-    this.sendNotification("textDocument/didOpen", params);
+    this.connection.sendNotification(DidOpenTextDocumentNotification.type, params);
   }
 
   /**
    * Change a text document
    */
   didChange(params: DidChangeTextDocumentParams): void {
+    if (!this.connection) {
+      this.logger.warn("Cannot send didChange - no connection");
+      return;
+    }
     this.logger.debug(`Changing document: ${params.textDocument.uri}`);
-    this.sendNotification("textDocument/didChange", params);
+    this.connection.sendNotification(DidChangeTextDocumentNotification.type, params);
   }
 
   /**
@@ -289,16 +309,24 @@ export class TypedLSPClient extends EventEmitter {
     textDocument: TextDocumentIdentifier;
     text?: string;
   }): void {
+    if (!this.connection) {
+      this.logger.warn("Cannot send didSave - no connection");
+      return;
+    }
     this.logger.debug(`Saving document: ${params.textDocument.uri}`);
-    this.sendNotification("textDocument/didSave", params);
+    this.connection.sendNotification(DidSaveTextDocumentNotification.type, params);
   }
 
   /**
    * Close a text document
    */
   didClose(params: DidCloseTextDocumentParams): void {
+    if (!this.connection) {
+      this.logger.warn("Cannot send didClose - no connection");
+      return;
+    }
     this.logger.debug(`Closing document: ${params.textDocument.uri}`);
-    this.sendNotification("textDocument/didClose", params);
+    this.connection.sendNotification(DidCloseTextDocumentNotification.type, params);
   }
 
   /**
@@ -308,8 +336,12 @@ export class TypedLSPClient extends EventEmitter {
     textDocument: TextDocumentIdentifier;
     reason: number;
   }): void {
+    if (!this.connection) {
+      this.logger.warn("Cannot send willSave - no connection");
+      return;
+    }
     this.logger.debug(`Will save document: ${params.textDocument.uri}`);
-    this.sendNotification("textDocument/willSave", params);
+    this.connection.sendNotification(WillSaveTextDocumentNotification.type, params);
   }
 
   /**
@@ -319,12 +351,17 @@ export class TypedLSPClient extends EventEmitter {
     textDocument: TextDocumentIdentifier;
     reason: number;
   }): Promise<TextEdit[] | null> {
+    if (!this.connection) {
+      this.logger.warn("Cannot send willSaveWaitUntil - no connection");
+      return null;
+    }
     this.logger.debug(`Will save and wait: ${params.textDocument.uri}`);
     try {
-      return await this.sendRequest<typeof params, TextEdit[]>(
-        "textDocument/willSaveWaitUntil",
+      const result = await this.connection.sendRequest(
+        WillSaveTextDocumentWaitUntilRequest.type,
         params,
       );
+      return result || null;
     } catch (error) {
       this.logger.error("willSaveWaitUntil failed", error);
       return null;
@@ -338,10 +375,11 @@ export class TypedLSPClient extends EventEmitter {
    */
   async hover(params: HoverParams): Promise<Hover | null> {
     try {
-      return await this.sendRequest<HoverParams, Hover>(
-        "textDocument/hover",
+      const result = await this.connection?.sendRequest(
+        HoverRequest.type,
         params,
       );
+      return result || null;
     } catch (error) {
       this.logger.error("Hover request failed", error);
       return null;
@@ -355,10 +393,11 @@ export class TypedLSPClient extends EventEmitter {
     params: CompletionParams,
   ): Promise<CompletionItem[] | CompletionList | null> {
     try {
-      return await this.sendRequest<
-        CompletionParams,
-        CompletionItem[] | CompletionList
-      >("textDocument/completion", params);
+      const result = await this.connection?.sendRequest(
+        CompletionRequest.type,
+        params,
+      );
+      return result || null;
     } catch (error) {
       this.logger.error("Completion request failed", error);
       return null;
@@ -372,10 +411,11 @@ export class TypedLSPClient extends EventEmitter {
     item: CompletionItem,
   ): Promise<CompletionItem | null> {
     try {
-      return await this.sendRequest<CompletionItem, CompletionItem>(
-        "completionItem/resolve",
+      const result = await this.connection?.sendRequest(
+        CompletionResolveRequest.type,
         item,
       );
+      return result || null;
     } catch (error) {
       this.logger.error("Completion item resolve failed", error);
       return null;
@@ -389,10 +429,11 @@ export class TypedLSPClient extends EventEmitter {
     params: SignatureHelpParams,
   ): Promise<SignatureHelp | null> {
     try {
-      return await this.sendRequest<SignatureHelpParams, SignatureHelp>(
-        "textDocument/signatureHelp",
+      const result = await this.connection?.sendRequest(
+        SignatureHelpRequest.type,
         params,
       );
+      return result || null;
     } catch (error) {
       this.logger.error("Signature help request failed", error);
       return null;
@@ -406,10 +447,11 @@ export class TypedLSPClient extends EventEmitter {
     params: TextDocumentPositionParams,
   ): Promise<Location | Location[] | LocationLink[] | null> {
     try {
-      return await this.sendRequest<
-        typeof params,
-        Location | Location[] | LocationLink[]
-      >("textDocument/definition", params);
+      const result = await this.connection?.sendRequest(
+        DefinitionRequest.type,
+        params,
+      );
+      return result || null;
     } catch (error) {
       this.logger.error("Definition request failed", error);
       return null;
@@ -423,10 +465,11 @@ export class TypedLSPClient extends EventEmitter {
     params: TypeDefinitionParams,
   ): Promise<Location | Location[] | LocationLink[] | null> {
     try {
-      return await this.sendRequest<
-        TypeDefinitionParams,
-        Location | Location[] | LocationLink[]
-      >("textDocument/typeDefinition", params);
+      const result = await this.connection?.sendRequest(
+        TypeDefinitionRequest.type,
+        params,
+      );
+      return result || null;
     } catch (error) {
       this.logger.error("Type definition request failed", error);
       return null;
@@ -440,10 +483,11 @@ export class TypedLSPClient extends EventEmitter {
     params: ImplementationParams,
   ): Promise<Location | Location[] | LocationLink[] | null> {
     try {
-      return await this.sendRequest<
-        ImplementationParams,
-        Location | Location[] | LocationLink[]
-      >("textDocument/implementation", params);
+      const result = await this.connection?.sendRequest(
+        ImplementationRequest.type,
+        params,
+      );
+      return result || null;
     } catch (error) {
       this.logger.error("Implementation request failed", error);
       return null;
@@ -457,10 +501,11 @@ export class TypedLSPClient extends EventEmitter {
     params: DeclarationParams,
   ): Promise<Location | Location[] | LocationLink[] | null> {
     try {
-      return await this.sendRequest<
-        DeclarationParams,
-        Location | Location[] | LocationLink[]
-      >("textDocument/declaration", params);
+      const result = await this.connection?.sendRequest(
+        DeclarationRequest.type,
+        params,
+      );
+      return result || null;
     } catch (error) {
       this.logger.error("Declaration request failed", error);
       return null;
@@ -472,10 +517,11 @@ export class TypedLSPClient extends EventEmitter {
    */
   async references(params: ReferenceParams): Promise<Location[] | null> {
     try {
-      return await this.sendRequest<ReferenceParams, Location[]>(
-        "textDocument/references",
+      const result = await this.connection?.sendRequest(
+        ReferencesRequest.type,
         params,
       );
+      return result || null;
     } catch (error) {
       this.logger.error("References request failed", error);
       return null;
@@ -489,10 +535,11 @@ export class TypedLSPClient extends EventEmitter {
     params: DocumentHighlightParams,
   ): Promise<DocumentHighlight[] | null> {
     try {
-      return await this.sendRequest<
-        DocumentHighlightParams,
-        DocumentHighlight[]
-      >("textDocument/documentHighlight", params);
+      const result = await this.connection?.sendRequest(
+        DocumentHighlightRequest.type,
+        params,
+      );
+      return result || null;
     } catch (error) {
       this.logger.error("Document highlight request failed", error);
       return null;
@@ -506,13 +553,15 @@ export class TypedLSPClient extends EventEmitter {
     params: DocumentSymbolParams,
   ): Promise<DocumentSymbol[] | SymbolInformation[] | null> {
     try {
-      return await this.sendRequest<
-        DocumentSymbolParams,
-        DocumentSymbol[] | SymbolInformation[]
-      >("textDocument/documentSymbol", params);
+      const result = await this.connection?.sendRequest(
+        DocumentSymbolRequest.type,
+        params,
+      );
+      // Some servers return null instead of empty array
+      return result || [];
     } catch (error) {
       this.logger.error("Document symbol request failed", error);
-      return null;
+      return [];
     }
   }
 
@@ -521,15 +570,25 @@ export class TypedLSPClient extends EventEmitter {
    */
   async workspaceSymbol(
     params: WorkspaceSymbolParams,
-  ): Promise<SymbolInformation[] | null> {
+  ): Promise<SymbolInformation[] | WorkspaceSymbol[]> {
     try {
-      return await this.sendRequest<WorkspaceSymbolParams, SymbolInformation[]>(
-        "workspace/symbol",
+      // WRONG
+      // const result = await this.sendRequest<SymbolInformation[] | null>(
+      //   "workspace/symbol",
+      //   params,
+      // );
+      // Some servers return null instead of empty array
+
+      //Right
+      const result = await this.connection?.sendRequest(
+        WorkspaceSymbolRequest.type,
         params,
       );
+      return result || [];
     } catch (error) {
       this.logger.error("Workspace symbol request failed", error);
-      return null;
+      // Return empty array instead of null for consistency
+      return [];
     }
   }
 
@@ -540,10 +599,11 @@ export class TypedLSPClient extends EventEmitter {
     params: CodeActionParams,
   ): Promise<(Command | CodeAction)[] | null> {
     try {
-      return await this.sendRequest<CodeActionParams, (Command | CodeAction)[]>(
-        "textDocument/codeAction",
+      const result = await this.connection?.sendRequest(
+        CodeActionRequest.type,
         params,
       );
+      return result || null;
     } catch (error) {
       this.logger.error("Code action request failed", error);
       return null;
@@ -555,10 +615,11 @@ export class TypedLSPClient extends EventEmitter {
    */
   async codeActionResolve(codeAction: CodeAction): Promise<CodeAction | null> {
     try {
-      return await this.sendRequest<CodeAction, CodeAction>(
-        "codeAction/resolve",
+      const result = await this.connection?.sendRequest(
+        CodeActionResolveRequest.type,
         codeAction,
       );
+      return result || null;
     } catch (error) {
       this.logger.error("Code action resolve failed", error);
       return null;
@@ -570,10 +631,11 @@ export class TypedLSPClient extends EventEmitter {
    */
   async codeLens(params: CodeLensParams): Promise<CodeLens[] | null> {
     try {
-      return await this.sendRequest<CodeLensParams, CodeLens[]>(
-        "textDocument/codeLens",
+      const result = await this.connection?.sendRequest(
+        CodeLensRequest.type,
         params,
       );
+      return result || null;
     } catch (error) {
       this.logger.error("Code lens request failed", error);
       return null;
@@ -585,10 +647,11 @@ export class TypedLSPClient extends EventEmitter {
    */
   async codeLensResolve(codeLens: CodeLens): Promise<CodeLens | null> {
     try {
-      return await this.sendRequest<CodeLens, CodeLens>(
-        "codeLens/resolve",
+      const result = await this.connection?.sendRequest(
+        CodeLensResolveRequest.type,
         codeLens,
       );
+      return result || null;
     } catch (error) {
       this.logger.error("Code lens resolve failed", error);
       return null;
@@ -602,10 +665,11 @@ export class TypedLSPClient extends EventEmitter {
     params: DocumentLinkParams,
   ): Promise<DocumentLink[] | null> {
     try {
-      return await this.sendRequest<DocumentLinkParams, DocumentLink[]>(
-        "textDocument/documentLink",
+      const result = await this.connection?.sendRequest(
+        DocumentLinkRequest.type,
         params,
       );
+      return result || null;
     } catch (error) {
       this.logger.error("Document link request failed", error);
       return null;
@@ -619,10 +683,11 @@ export class TypedLSPClient extends EventEmitter {
     documentLink: DocumentLink,
   ): Promise<DocumentLink | null> {
     try {
-      return await this.sendRequest<DocumentLink, DocumentLink>(
-        "documentLink/resolve",
+      const result = await this.connection?.sendRequest(
+        DocumentLinkResolveRequest.type,
         documentLink,
       );
+      return result || null;
     } catch (error) {
       this.logger.error("Document link resolve failed", error);
       return null;
@@ -636,10 +701,11 @@ export class TypedLSPClient extends EventEmitter {
     params: DocumentFormattingParams,
   ): Promise<TextEdit[] | null> {
     try {
-      return await this.sendRequest<DocumentFormattingParams, TextEdit[]>(
-        "textDocument/formatting",
+      const result = await this.connection?.sendRequest(
+        DocumentFormattingRequest.type,
         params,
       );
+      return result || null;
     } catch (error) {
       this.logger.error("Document formatting request failed", error);
       return null;
@@ -653,10 +719,11 @@ export class TypedLSPClient extends EventEmitter {
     params: DocumentRangeFormattingParams,
   ): Promise<TextEdit[] | null> {
     try {
-      return await this.sendRequest<DocumentRangeFormattingParams, TextEdit[]>(
-        "textDocument/rangeFormatting",
+      const result = await this.connection?.sendRequest(
+        DocumentRangeFormattingRequest.type,
         params,
       );
+      return result || null;
     } catch (error) {
       this.logger.error("Document range formatting request failed", error);
       return null;
@@ -670,10 +737,11 @@ export class TypedLSPClient extends EventEmitter {
     params: DocumentOnTypeFormattingParams,
   ): Promise<TextEdit[] | null> {
     try {
-      return await this.sendRequest<DocumentOnTypeFormattingParams, TextEdit[]>(
-        "textDocument/onTypeFormatting",
+      const result = await this.connection?.sendRequest(
+        DocumentOnTypeFormattingRequest.type,
         params,
       );
+      return result || null;
     } catch (error) {
       this.logger.error("Document on type formatting request failed", error);
       return null;
@@ -685,10 +753,11 @@ export class TypedLSPClient extends EventEmitter {
    */
   async rename(params: RenameParams): Promise<WorkspaceEdit | null> {
     try {
-      return await this.sendRequest<RenameParams, WorkspaceEdit>(
-        "textDocument/rename",
+      const result = await this.connection?.sendRequest(
+        RenameRequest.type,
         params,
       );
+      return result || null;
     } catch (error) {
       this.logger.error("Rename request failed", error);
       return null;
@@ -700,12 +769,13 @@ export class TypedLSPClient extends EventEmitter {
    */
   async prepareRename(
     params: PrepareRenameParams,
-  ): Promise<Range | { range: Range; placeholder: string } | null> {
+  ): Promise<Range | { range: Range; placeholder: string } | { defaultBehavior: boolean } | null> {
     try {
-      return await this.sendRequest<
-        PrepareRenameParams,
-        Range | { range: Range; placeholder: string }
-      >("textDocument/prepareRename", params);
+      const result = await this.connection?.sendRequest(
+        PrepareRenameRequest.type,
+        params,
+      );
+      return result || null;
     } catch (error) {
       this.logger.error("Prepare rename request failed", error);
       return null;
@@ -719,10 +789,11 @@ export class TypedLSPClient extends EventEmitter {
     params: FoldingRangeParams,
   ): Promise<FoldingRange[] | null> {
     try {
-      return await this.sendRequest<FoldingRangeParams, FoldingRange[]>(
-        "textDocument/foldingRange",
+      const result = await this.connection?.sendRequest(
+        FoldingRangeRequest.type,
         params,
       );
+      return result || null;
     } catch (error) {
       this.logger.error("Folding range request failed", error);
       return null;
@@ -736,10 +807,11 @@ export class TypedLSPClient extends EventEmitter {
     params: SelectionRangeParams,
   ): Promise<SelectionRange[] | null> {
     try {
-      return await this.sendRequest<SelectionRangeParams, SelectionRange[]>(
-        "textDocument/selectionRange",
+      const result = await this.connection?.sendRequest(
+        SelectionRangeRequest.type,
         params,
       );
+      return result || null;
     } catch (error) {
       this.logger.error("Selection range request failed", error);
       return null;
@@ -753,10 +825,11 @@ export class TypedLSPClient extends EventEmitter {
     params: SemanticTokensParams,
   ): Promise<SemanticTokens | null> {
     try {
-      return await this.sendRequest<SemanticTokensParams, SemanticTokens>(
-        "textDocument/semanticTokens/full",
+      const result = await this.connection?.sendRequest(
+        SemanticTokensRequest.type,
         params,
       );
+      return result || null;
     } catch (error) {
       this.logger.error("Semantic tokens request failed", error);
       return null;
@@ -768,10 +841,11 @@ export class TypedLSPClient extends EventEmitter {
    */
   async executeCommand(params: ExecuteCommandParams): Promise<any> {
     try {
-      return await this.sendRequest<ExecuteCommandParams, any>(
-        "workspace/executeCommand",
+      const result = await this.connection?.sendRequest(
+        ExecuteCommandRequest.type,
         params,
       );
+      return result || null;
     } catch (error) {
       this.logger.error("Execute command failed", error);
       return null;
@@ -783,14 +857,15 @@ export class TypedLSPClient extends EventEmitter {
   /**
    * Apply a workspace edit
    */
-  async applyEdit(params: { edit: WorkspaceEdit; label?: string }): Promise<{
+  async applyEdit(params: ApplyWorkspaceEditParams): Promise<{
     applied: boolean;
   } | null> {
     try {
-      return await this.sendRequest<typeof params, { applied: boolean }>(
-        "workspace/applyEdit",
+      const result = await this.connection?.sendRequest(
+        ApplyWorkspaceEditRequest.type,
         params,
       );
+      return result || null;
     } catch (error) {
       this.logger.error("Apply edit failed", error);
       return null;
@@ -813,7 +888,9 @@ export class TypedLSPClient extends EventEmitter {
   async pullDiagnostics(uri: string): Promise<Diagnostic[] | null> {
     try {
       this.logger.debug(`Pulling diagnostics for: ${uri}`);
-      const result = await this.sendRequest<any, any>(
+      // Note: There's no standard type for pull diagnostics in vscode-languageserver-protocol yet
+      // This is a newer LSP 3.17+ feature, so we'll use direct string method for now
+      const result = await this.connection?.sendRequest(
         "textDocument/diagnostic",
         {
           textDocument: { uri },
