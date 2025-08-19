@@ -5,6 +5,8 @@
  * This file serves as the entry point for npx execution
  */
 
+import { logger, LogLevel } from './utils/logger';
+
 // Parse command line arguments
 const args = process.argv.slice(2);
 
@@ -20,6 +22,10 @@ Options:
   --node-ipc        Use node-ipc for communication
   --socket=<port>   Use socket on specified port
   --pipe=<name>     Use named pipe
+  --verbose         Enable verbose logging (debug level)
+  --trace           Enable trace logging (most verbose)
+  --quiet           Only show errors
+  --log-level=<level>  Set log level (error|warn|info|debug|trace)
   --help, -h        Show this help message
   --version, -v     Show version information
 
@@ -49,6 +55,30 @@ if (args.includes('--version') || args.includes('-v')) {
   process.exit(0);
 }
 
+// Configure logging level
+if (args.includes('--verbose')) {
+  logger.setLevel(LogLevel.DEBUG);
+} else if (args.includes('--trace')) {
+  logger.setLevel(LogLevel.TRACE);
+} else if (args.includes('--quiet')) {
+  logger.setLevel(LogLevel.ERROR);
+} else {
+  // Check for explicit log level
+  const logLevelArg = args.find(arg => arg.startsWith('--log-level='));
+  if (logLevelArg) {
+    const level = logLevelArg.split('=')[1];
+    logger.setLevelFromString(level);
+  } else {
+    // Default to ERROR for stdio mode (to not interfere with LSP communication)
+    // and INFO for other modes
+    if (args.includes('--stdio') || (!args.includes('--socket') && !args.includes('--pipe') && !args.includes('--node-ipc'))) {
+      logger.setLevel(LogLevel.ERROR);
+    } else {
+      logger.setLevel(LogLevel.INFO);
+    }
+  }
+}
+
 // Default to stdio if no communication method specified
 if (args.length === 0 || (!args.includes('--stdio') && 
     !args.includes('--node-ipc') && 
@@ -68,7 +98,7 @@ import('./server').then(() => {
     
     // Handle graceful shutdown
     const shutdown = async () => {
-      console.error('Shutting down Svelte Proxy LSP...');
+      logger.info('Shutting down Svelte Proxy LSP...');
       await server.stop();
       process.exit(0);
     };
@@ -78,16 +108,16 @@ import('./server').then(() => {
     process.on('SIGHUP', shutdown);
     
     try {
-      console.error('Svelte Proxy LSP Server starting...');
+      logger.info('Svelte Proxy LSP Server starting...');
       await server.start();
     } catch (error) {
-      console.error('Failed to start Svelte Proxy LSP:', error);
+      logger.error('Failed to start Svelte Proxy LSP:', error);
       process.exit(1);
     }
   }
   
   startServer();
 }).catch((error) => {
-  console.error('Failed to load Svelte Proxy LSP Server:', error);
+  logger.error('Failed to load Svelte Proxy LSP Server:', error);
   process.exit(1);
 });

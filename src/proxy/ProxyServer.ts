@@ -45,6 +45,7 @@ import {
   shouldUseTypeScriptServer,
 } from "../utils/documentParser";
 import { getTsServerPluginConfig } from "../utils/tsconfig";
+import { logger } from "../utils/logger";
 import { LSPServerProcess } from "./LSPServerProcess";
 
 export class ProxyServer {
@@ -127,7 +128,7 @@ export class ProxyServer {
     this.setupNotificationForwarding();
 
     this.connection.listen();
-    console.log("Svelte Proxy LSP Server started");
+    logger.info("Svelte Proxy LSP Server started");
   }
 
   async stop(): Promise<void> {
@@ -208,8 +209,8 @@ export class ProxyServer {
       },
     };
 
-    console.log("Initializing servers...");
-    console.log("TypeScript server will use Svelte plugin:", !!sveltePlugin);
+    logger.debug("Initializing servers...");
+    logger.debug("TypeScript server will use Svelte plugin:", !!sveltePlugin);
 
     // Initialize both servers with proper configurations
     const [svelteCapabilities, tsCapabilities] = await Promise.all([
@@ -235,13 +236,13 @@ export class ProxyServer {
   private setupNotificationForwarding(): void {
     // Forward diagnostics from Svelte server using the dedicated onDiagnostic method
     this.svelteServer.onDiagnostic((params) => {
-      console.log("Forwarding diagnostics from Svelte server:", params.uri);
+      logger.trace("Forwarding diagnostics from Svelte server:", params.uri);
       this.connection.sendDiagnostics(params);
     });
 
     // Forward diagnostics from TypeScript server using the dedicated onDiagnostic method
     this.typescriptServer.onDiagnostic((params) => {
-      console.log("Forwarding diagnostics from TypeScript server:", params.uri);
+      logger.trace("Forwarding diagnostics from TypeScript server:", params.uri);
       this.connection.sendDiagnostics(params);
     });
 
@@ -265,7 +266,7 @@ export class ProxyServer {
   }
 
   private onInitialized(): void {
-    console.log("Svelte Proxy LSP initialized");
+    logger.debug("Svelte Proxy LSP initialized");
 
     // Send initial configuration matching VSCode extension
     const initialConfig = {
@@ -325,14 +326,14 @@ export class ProxyServer {
 
   private onDidOpenDocument(event: { document: TextDocument }): void {
     const document = event.document;
-    console.log(`Opening document: ${document.uri}`);
+    logger.debug(`Opening document: ${document.uri}`);
     this.updateParsedDocument(document);
     this.syncDocumentOpen(document);
   }
 
   private onDidChangeDocument(event: { document: TextDocument }): void {
     const document = event.document;
-    console.log(`Document changed: ${document.uri}`);
+    logger.trace(`Document changed: ${document.uri}`);
     this.updateParsedDocument(document);
     this.syncDocumentChange(document);
   }
@@ -379,7 +380,7 @@ export class ProxyServer {
 
     // Send to appropriate server based on file type
     if (isSvelteFile(document.uri)) {
-      console.log(`Sending Svelte file to Svelte server: ${document.uri}`);
+      logger.trace(`Sending Svelte file to Svelte server: ${document.uri}`);
       this.svelteServer.sendNotification("textDocument/didOpen", docParams);
     } else if (
       document.uri.endsWith(".ts") ||
@@ -387,7 +388,7 @@ export class ProxyServer {
       document.uri.endsWith(".tsx") ||
       document.uri.endsWith(".jsx")
     ) {
-      console.log(
+      logger.trace(
         `Sending TypeScript file to TypeScript server: ${document.uri}`,
       );
       this.typescriptServer.sendNotification("textDocument/didOpen", docParams);
@@ -431,7 +432,7 @@ export class ProxyServer {
   ): Promise<CompletionItem[]> {
     const parsed = this.parsedDocuments.get(params.textDocument.uri);
     if (!parsed) {
-      console.log(`No parsed document found for ${params.textDocument.uri}`);
+      logger.trace(`No parsed document found for ${params.textDocument.uri}`);
       return [];
     }
 
@@ -439,18 +440,18 @@ export class ProxyServer {
     const useSvelte = shouldUseSvelteServer(parsed, params.position);
     const useTypeScript = shouldUseTypeScriptServer(parsed, params.position);
 
-    console.log(`Completion request for ${params.textDocument.uri}`);
-    console.log(`Will use Svelte: ${useSvelte}, TypeScript: ${useTypeScript}`);
+    logger.trace(`Completion request for ${params.textDocument.uri}`);
+    logger.trace(`Will use Svelte: ${useSvelte}, TypeScript: ${useTypeScript}`);
 
     // Get completions from appropriate server based on file type
     if (useSvelte) {
       try {
-        console.log("Requesting completion from Svelte server...");
+        logger.trace("Requesting completion from Svelte server...");
         const svelteResults = await this.svelteServer.sendRequest<
           typeof params,
           CompletionItem[]
         >("textDocument/completion", params);
-        console.log(
+        logger.trace(
           `Svelte server returned:`,
           svelteResults ? "results" : "null",
         );
@@ -460,18 +461,18 @@ export class ProxyServer {
           results.push(...((svelteResults as any)?.items || []));
         }
       } catch (error) {
-        console.error("Svelte completion error:", error);
+        logger.error("Svelte completion error:", error);
       }
     }
 
     if (useTypeScript) {
       try {
-        console.log("Requesting completion from TypeScript server...");
+        logger.trace("Requesting completion from TypeScript server...");
         const tsResults = await this.typescriptServer.sendRequest<
           typeof params,
           CompletionItem[]
         >("textDocument/completion", params);
-        console.log(
+        logger.trace(
           `TypeScript server returned:`,
           tsResults ? "results" : "null",
         );
@@ -481,68 +482,68 @@ export class ProxyServer {
           results.push(...((tsResults as any)?.items || []));
         }
       } catch (error) {
-        console.error("TypeScript completion error:", error);
+        logger.error("TypeScript completion error:", error);
       }
     }
 
-    console.log(`Total completion results: ${results.length}`);
+    logger.trace(`Total completion results: ${results.length}`);
     return this.deduplicateCompletions(results);
   }
 
   private async onHover(
     params: TextDocumentPositionParams,
   ): Promise<Hover | null> {
-    console.log(
-      `🔍 Hover request for ${params.textDocument.uri} at line ${params.position.line}, char ${params.position.character}`,
+    logger.trace(
+      `Hover request for ${params.textDocument.uri} at line ${params.position.line}, char ${params.position.character}`,
     );
 
     const parsed = this.parsedDocuments.get(params.textDocument.uri);
     if (!parsed) {
-      console.log("❌ No parsed document found for hover request");
+      logger.trace("No parsed document found for hover request");
       return null;
     }
 
     const useSvelte = shouldUseSvelteServer(parsed, params.position);
     const useTypeScript = shouldUseTypeScriptServer(parsed, params.position);
 
-    console.log(`Will use Svelte: ${useSvelte}, TypeScript: ${useTypeScript}`);
+    logger.trace(`Will use Svelte: ${useSvelte}, TypeScript: ${useTypeScript}`);
 
     // Use appropriate server based on file type
     if (useSvelte) {
       try {
-        console.log("🚀 Sending hover request to Svelte server...");
+        logger.trace("Sending hover request to Svelte server...");
         const result = await this.svelteServer.sendRequest<
           typeof params,
           Hover | null
         >("textDocument/hover", params);
-        console.log(
-          "📥 Svelte server hover response:",
+        logger.trace(
+          "Svelte server hover response:",
           result ? "Has result" : "No result",
         );
         return result;
       } catch (error) {
-        console.error("❌ Svelte hover error:", error);
+        logger.error("❌ Svelte hover error:", error);
       }
     }
 
     if (useTypeScript) {
       try {
-        console.log("🚀 Sending hover request to TypeScript server...");
+        logger.trace("Sending hover request to TypeScript server...");
         const result = await this.typescriptServer.sendRequest<
           typeof params,
           Hover | null
         >("textDocument/hover", params);
-        console.log(
-          "📥 TypeScript server hover response:",
+        logger.trace(
+          "TypeScript server hover response:",
           result ? "Has result" : "No result",
         );
         return result;
       } catch (error) {
-        console.error("❌ TypeScript hover error:", error);
+        logger.error("❌ TypeScript hover error:", error);
       }
     }
 
-    console.log("❌ No server selected for hover request");
+    logger.trace("No server selected for hover request");
     return null;
   }
 
@@ -562,7 +563,7 @@ export class ProxyServer {
         >("textDocument/definition", params);
         results.push(...(tsResults || []));
       } catch (error) {
-        console.error("TypeScript definition error:", error);
+        logger.error("TypeScript definition error:", error);
       }
     }
 
@@ -574,7 +575,7 @@ export class ProxyServer {
         >("textDocument/definition", params);
         results.push(...(svelteResults || []));
       } catch (error) {
-        console.error("Svelte definition error:", error);
+        logger.error("Svelte definition error:", error);
       }
     }
 
@@ -595,7 +596,7 @@ export class ProxyServer {
         >("textDocument/references", params);
         results.push(...(tsResults || []));
       } catch (error) {
-        console.error("TypeScript references error:", error);
+        logger.error("TypeScript references error:", error);
       }
     }
 
@@ -607,7 +608,7 @@ export class ProxyServer {
         >("textDocument/references", params);
         results.push(...(svelteResults || []));
       } catch (error) {
-        console.error("Svelte references error:", error);
+        logger.error("Svelte references error:", error);
       }
     }
 
@@ -629,7 +630,7 @@ export class ProxyServer {
         >("textDocument/signatureHelp", params);
         if (result) return result;
       } catch (error) {
-        console.error("TypeScript signature help error:", error);
+        logger.error("TypeScript signature help error:", error);
       }
     }
 
@@ -640,7 +641,7 @@ export class ProxyServer {
           SignatureHelp | null
         >("textDocument/signatureHelp", params);
       } catch (error) {
-        console.error("Svelte signature help error:", error);
+        logger.error("Svelte signature help error:", error);
       }
     }
 
@@ -665,7 +666,7 @@ export class ProxyServer {
             DocumentSymbol[]
           >("textDocument/documentSymbol", params)
           .catch((error) => {
-            console.error("Svelte document symbol error:", error);
+            logger.error("Svelte document symbol error:", error);
             return null;
           }),
 
@@ -675,7 +676,7 @@ export class ProxyServer {
             DocumentSymbol[]
           >("textDocument/documentSymbol", params)
           .catch((error) => {
-            console.error("TypeScript document symbol error:", error);
+            logger.error("TypeScript document symbol error:", error);
             return null;
           }),
       ]);
@@ -696,7 +697,7 @@ export class ProxyServer {
         >("textDocument/documentSymbol", params);
         results.push(...(tsResults || []));
       } catch (error) {
-        console.error("TypeScript document symbol error:", error);
+        logger.error("TypeScript document symbol error:", error);
       }
     }
 
@@ -717,7 +718,7 @@ export class ProxyServer {
         >("textDocument/codeAction", params);
         results.push(...(tsResults || []));
       } catch (error) {
-        console.error("TypeScript code action error:", error);
+        logger.error("TypeScript code action error:", error);
       }
     }
 
@@ -729,7 +730,7 @@ export class ProxyServer {
         >("textDocument/codeAction", params);
         results.push(...(svelteResults || []));
       } catch (error) {
-        console.error("Svelte code action error:", error);
+        logger.error("Svelte code action error:", error);
       }
     }
 
@@ -749,7 +750,7 @@ export class ProxyServer {
         >("textDocument/rename", params);
         if (result) return result;
       } catch (error) {
-        console.error("TypeScript rename error:", error);
+        logger.error("TypeScript rename error:", error);
       }
     }
 
@@ -760,7 +761,7 @@ export class ProxyServer {
           WorkspaceEdit | null
         >("textDocument/rename", params);
       } catch (error) {
-        console.error("Svelte rename error:", error);
+        logger.error("Svelte rename error:", error);
       }
     }
 
@@ -783,7 +784,7 @@ export class ProxyServer {
           SymbolInformation[]
         >("workspace/symbol", params)
         .catch((error) => {
-          console.error("TypeScript workspace symbol error:", error);
+          logger.error("TypeScript workspace symbol error:", error);
           return null;
         }),
 
@@ -794,7 +795,7 @@ export class ProxyServer {
           SymbolInformation[]
         >("workspace/symbol", params)
         .catch((error) => {
-          console.error("Svelte workspace symbol error:", error);
+          logger.error("Svelte workspace symbol error:", error);
           return null;
         }),
     ]);
@@ -829,7 +830,7 @@ export class ProxyServer {
         >("textDocument/formatting", params);
         if (result && result.length > 0) return result;
       } catch (error) {
-        console.error("Svelte formatting error:", error);
+        logger.error("Svelte formatting error:", error);
       }
     }
 
@@ -841,7 +842,7 @@ export class ProxyServer {
         )) || []
       );
     } catch (error) {
-      console.error("TypeScript formatting error:", error);
+      logger.error("TypeScript formatting error:", error);
       return [];
     }
   }
@@ -910,7 +911,7 @@ export class ProxyServer {
         >("textDocument/typeDefinition", params);
         results.push(...(tsResults || []));
       } catch (error) {
-        console.error("TypeScript type definition error:", error);
+        logger.error("TypeScript type definition error:", error);
       }
     }
 
@@ -922,7 +923,7 @@ export class ProxyServer {
         >("textDocument/typeDefinition", params);
         results.push(...(svelteResults || []));
       } catch (error) {
-        console.error("Svelte type definition error:", error);
+        logger.error("Svelte type definition error:", error);
       }
     }
 
@@ -945,7 +946,7 @@ export class ProxyServer {
         >("textDocument/implementation", params);
         results.push(...(tsResults || []));
       } catch (error) {
-        console.error("TypeScript implementation error:", error);
+        logger.error("TypeScript implementation error:", error);
       }
     }
 
@@ -957,7 +958,7 @@ export class ProxyServer {
         >("textDocument/implementation", params);
         results.push(...(svelteResults || []));
       } catch (error) {
-        console.error("Svelte implementation error:", error);
+        logger.error("Svelte implementation error:", error);
       }
     }
 
@@ -978,7 +979,7 @@ export class ProxyServer {
         >("textDocument/declaration", params);
         results.push(...(tsResults || []));
       } catch (error) {
-        console.error("TypeScript declaration error:", error);
+        logger.error("TypeScript declaration error:", error);
       }
     }
 
@@ -990,7 +991,7 @@ export class ProxyServer {
         >("textDocument/declaration", params);
         results.push(...(svelteResults || []));
       } catch (error) {
-        console.error("Svelte declaration error:", error);
+        logger.error("Svelte declaration error:", error);
       }
     }
 
@@ -1013,7 +1014,7 @@ export class ProxyServer {
         >("textDocument/documentHighlight", params);
         results.push(...(tsResults || []));
       } catch (error) {
-        console.error("TypeScript document highlight error:", error);
+        logger.error("TypeScript document highlight error:", error);
       }
     }
 
@@ -1025,7 +1026,7 @@ export class ProxyServer {
         >("textDocument/documentHighlight", params);
         results.push(...(svelteResults || []));
       } catch (error) {
-        console.error("Svelte document highlight error:", error);
+        logger.error("Svelte document highlight error:", error);
       }
     }
 
@@ -1047,7 +1048,7 @@ export class ProxyServer {
         >("textDocument/prepareRename", params);
         if (tsResult) return tsResult;
       } catch (error) {
-        console.error("TypeScript prepare rename error:", error);
+        logger.error("TypeScript prepare rename error:", error);
       }
     }
 
@@ -1060,7 +1061,7 @@ export class ProxyServer {
         >("textDocument/prepareRename", params);
         if (svelteResult) return svelteResult;
       } catch (error) {
-        console.error("Svelte prepare rename error:", error);
+        logger.error("Svelte prepare rename error:", error);
       }
     }
 
@@ -1088,7 +1089,7 @@ export class ProxyServer {
         return tsResult;
       }
     } catch (error) {
-      console.error("TypeScript completion resolve error:", error);
+      logger.error("TypeScript completion resolve error:", error);
     }
 
     try {
@@ -1101,7 +1102,7 @@ export class ProxyServer {
         return svelteResult;
       }
     } catch (error) {
-      console.error("Svelte completion resolve error:", error);
+      logger.error("Svelte completion resolve error:", error);
     }
 
     // Return original item if resolve failed
@@ -1160,7 +1161,7 @@ export class ProxyServer {
             CodeLens[]
           >("textDocument/codeLens", params)
           .catch((error) => {
-            console.error("Svelte code lens error:", error);
+            logger.error("Svelte code lens error:", error);
             return null;
           }),
 
@@ -1170,7 +1171,7 @@ export class ProxyServer {
             CodeLens[]
           >("textDocument/codeLens", params)
           .catch((error) => {
-            console.error("TypeScript code lens error:", error);
+            logger.error("TypeScript code lens error:", error);
             return null;
           }),
       ]);
@@ -1191,7 +1192,7 @@ export class ProxyServer {
         >("textDocument/codeLens", params);
         results.push(...(tsResults || []));
       } catch (error) {
-        console.error("TypeScript code lens error:", error);
+        logger.error("TypeScript code lens error:", error);
       }
     }
 
@@ -1210,7 +1211,7 @@ export class ProxyServer {
         return tsResult;
       }
     } catch (error) {
-      console.error("TypeScript code lens resolve error:", error);
+      logger.error("TypeScript code lens resolve error:", error);
     }
 
     try {
@@ -1223,7 +1224,7 @@ export class ProxyServer {
         return svelteResult;
       }
     } catch (error) {
-      console.error("Svelte code lens resolve error:", error);
+      logger.error("Svelte code lens resolve error:", error);
     }
 
     // Return original lens if resolve failed
@@ -1248,7 +1249,7 @@ export class ProxyServer {
             FoldingRange[]
           >("textDocument/foldingRange", params)
           .catch((error) => {
-            console.error("Svelte folding range error:", error);
+            logger.error("Svelte folding range error:", error);
             return null;
           }),
 
@@ -1258,7 +1259,7 @@ export class ProxyServer {
             FoldingRange[]
           >("textDocument/foldingRange", params)
           .catch((error) => {
-            console.error("TypeScript folding range error:", error);
+            logger.error("TypeScript folding range error:", error);
             return null;
           }),
       ]);
@@ -1279,7 +1280,7 @@ export class ProxyServer {
         >("textDocument/foldingRange", params);
         results.push(...(tsResults || []));
       } catch (error) {
-        console.error("TypeScript folding range error:", error);
+        logger.error("TypeScript folding range error:", error);
       }
     }
 
@@ -1316,7 +1317,7 @@ export class ProxyServer {
             results.push(tsResults[0]);
           }
         } catch (error) {
-          console.error("TypeScript selection range error:", error);
+          logger.error("TypeScript selection range error:", error);
         }
       } else if (useSvelte) {
         try {
@@ -1334,7 +1335,7 @@ export class ProxyServer {
             results.push(svelteResults[0]);
           }
         } catch (error) {
-          console.error("Svelte selection range error:", error);
+          logger.error("Svelte selection range error:", error);
         }
       }
     }

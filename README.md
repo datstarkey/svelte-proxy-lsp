@@ -107,9 +107,32 @@ svelte-proxy-lsp --stdio
 # With socket
 svelte-proxy-lsp --socket=5000
 
+# With verbose logging for debugging
+svelte-proxy-lsp --stdio --verbose
+
+# With trace logging (most detailed)
+svelte-proxy-lsp --stdio --trace
+
+# Quiet mode (errors only)
+svelte-proxy-lsp --stdio --quiet
+
+# Custom log level
+svelte-proxy-lsp --stdio --log-level=debug
+
 # Show help
 svelte-proxy-lsp --help
 ```
+
+### Logging Options
+
+The proxy supports configurable logging levels:
+
+- `--verbose` - Debug level logging (shows server startup, requests, etc.)
+- `--trace` - Most detailed logging (includes all requests and responses)
+- `--quiet` - Only shows errors
+- `--log-level=<level>` - Set specific level: `error`, `warn`, `info`, `debug`, `trace`
+
+**Note**: In `--stdio` mode (default), logging is automatically set to `error` level to avoid interfering with LSP communication. Use `--verbose` or `--trace` to override this for debugging.
 
 ### Editor Configuration
 

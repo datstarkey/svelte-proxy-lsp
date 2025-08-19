@@ -10,6 +10,7 @@ import {
   PublishDiagnosticsNotification,
   type PublishDiagnosticsParams,
 } from "vscode-languageserver";
+import { logger } from "../utils/logger";
 
 export interface LSPServerConfig {
   command: string;
@@ -32,7 +33,7 @@ export class LSPServerProcess {
       throw new Error(`${this.config.name} server is already running`);
     }
 
-    console.log(
+    logger.debug(
       `Starting ${this.config.name} server: ${this.config.command} ${this.config.args.join(" ")}`,
     );
 
@@ -47,18 +48,18 @@ export class LSPServerProcess {
     }
 
     this.childProcess.on("error", (error) => {
-      console.error(`${this.config.name} server error:`, error);
+      logger.error(`${this.config.name} server error:`, error);
     });
 
     this.childProcess.on("exit", (code, signal) => {
-      console.log(
+      logger.info(
         `${this.config.name} server exited with code ${code}, signal ${signal}`,
       );
       this.cleanup();
     });
 
     this.childProcess.stderr?.on("data", (data) => {
-      console.error(`${this.config.name} server stderr:`, data.toString());
+      logger.warn(`${this.config.name} server stderr:`, data.toString());
     });
 
     // Create JSON-RPC connection
@@ -67,11 +68,11 @@ export class LSPServerProcess {
     this.connection = createMessageConnection(reader, writer);
 
     this.connection.onError((error) => {
-      console.error(`${this.config.name} connection error:`, error);
+      logger.error(`${this.config.name} connection error:`, error);
     });
 
     this.connection.onClose(() => {
-      console.log(`${this.config.name} connection closed`);
+      logger.info(`${this.config.name} connection closed`);
       this.cleanup();
     });
 
@@ -103,15 +104,15 @@ export class LSPServerProcess {
       throw new Error(`${this.config.name} server is not initialized`);
     }
 
-    console.log(`📤 Sending ${method} request to ${this.config.name} server`);
+    logger.debug(`📤 Sending ${method} request to ${this.config.name} server`);
     const requestType = new RequestType<P, R, any>(method);
 
     try {
       const result = await this.connection.sendRequest(requestType, params);
-      console.log(`📥 Got ${method} response from ${this.config.name} server`);
+      logger.debug(`📥 Got ${method} response from ${this.config.name} server`);
       return result;
     } catch (error) {
-      console.error(
+      logger.error(
         `❌ ${method} request failed to ${this.config.name} server:`,
         error,
       );
@@ -121,7 +122,7 @@ export class LSPServerProcess {
 
   sendNotification<P>(method: string, params: P): void {
     if (!this.connection) {
-      console.warn(
+      logger.warn(
         `Cannot send notification to ${this.config.name} - server not started`,
       );
       return;
@@ -152,11 +153,11 @@ export class LSPServerProcess {
     this.connection.onNotification(
       PublishDiagnosticsNotification.type,
       (params) => {
-        console.log(
+        logger.debug(
           `Received diagnostics from ${this.config.name} for:`,
           params.uri,
         );
-        console.log(`Diagnostic count: ${params.diagnostics.length}`);
+        logger.debug(`Diagnostic count: ${params.diagnostics.length}`);
         handler(params);
       },
     );
@@ -180,7 +181,7 @@ export class LSPServerProcess {
         const exitNotification = new NotificationType<any>("exit");
         this.connection.sendNotification(exitNotification, undefined);
       } catch (error) {
-        console.error(
+        logger.error(
           `Error during ${this.config.name} server shutdown:`,
           error,
         );
