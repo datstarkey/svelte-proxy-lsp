@@ -91,79 +91,74 @@ describe('LSP Symbol Insertion and Completion Tests', () => {
 
     await new Promise(resolve => setTimeout(resolve, 2000));
 
-    try {
-      // Test completion after "person."
-      const personCompletion = await client.completion( {
-        textDocument: createTextDocumentIdentifier(docUri),
-        position: { line: 10, character: 11 } // After "person."
-      });
+    // Test completion after "person."
+    const personCompletion = await client.completion( {
+      textDocument: createTextDocumentIdentifier(docUri),
+      position: { line: 10, character: 11 } // After "person."
+    });
 
-      console.log('✅ Person property completions:');
-      if (personCompletion) {
-        const items = Array.isArray(personCompletion) 
-          ? personCompletion 
-          : (personCompletion as any).items || [];
-        console.log(`  Found ${items.length} completion items`);
-        
-        // Look for expected properties
-        const hasName = items.some((item: any) => item.label === 'name');
-        const hasAge = items.some((item: any) => item.label === 'age');
-        const hasJob = items.some((item: any) => item.label === 'job');
-        
-        console.log(`  - name: ${hasName ? '✅' : '❌'}`);
-        console.log(`  - age: ${hasAge ? '✅' : '❌'}`);
-        console.log(`  - job: ${hasJob ? '✅' : '❌'}`);
-      } else {
-        console.log('  No completion items received');
-      }
+    // Assert completion response is valid
+    expect(personCompletion).toBeDefined();
+    
+    const personItems = Array.isArray(personCompletion) 
+      ? personCompletion 
+      : (personCompletion as any).items || [];
+    
+    expect(personItems.length).toBeGreaterThan(0);
+    
+    console.log('✅ Person property completions:');
+    console.log(`  Found ${personItems.length} completion items`);
+    
+    // Assert expected properties are present
+    const hasName = personItems.some((item: any) => item.label === 'name');
+    const hasAge = personItems.some((item: any) => item.label === 'age');
+    const hasJob = personItems.some((item: any) => item.label === 'job');
+    
+    expect(hasName).toBe(true);
+    expect(hasAge).toBe(true);
+    expect(hasJob).toBe(true);
 
-      // Test completion after "person.job."
-      const jobCompletion = await client.completion( {
-        textDocument: createTextDocumentIdentifier(docUri),
-        position: { line: 13, character: 15 } // After "person.job."
-      });
+    // Test completion after "person.job."
+    const jobCompletion = await client.completion( {
+      textDocument: createTextDocumentIdentifier(docUri),
+      position: { line: 13, character: 15 } // After "person.job."
+    });
 
-      console.log('\n✅ Job property completions:');
-      if (jobCompletion) {
-        const items = Array.isArray(jobCompletion) 
-          ? jobCompletion 
-          : (jobCompletion as any).items || [];
-        console.log(`  Found ${items.length} completion items`);
-        
-        const hasTitle = items.some((item: any) => item.label === 'title');
-        const hasWork = items.some((item: any) => item.label === 'work');
-        
-        console.log(`  - title: ${hasTitle ? '✅' : '❌'}`);
-        console.log(`  - work: ${hasWork ? '✅' : '❌'}`);
-      } else {
-        console.log('  No completion items received');
-      }
+    expect(jobCompletion).toBeDefined();
+    
+    const jobItems = Array.isArray(jobCompletion) 
+      ? jobCompletion 
+      : (jobCompletion as any).items || [];
+    
+    expect(jobItems.length).toBeGreaterThan(0);
+    
+    console.log('\n✅ Job property completions:');
+    console.log(`  Found ${jobItems.length} completion items`);
+    
+    // Assert expected Job properties
+    const hasTitle = jobItems.some((item: any) => item.label === 'title');
+    const hasWork = jobItems.some((item: any) => item.label === 'work' || item.label === 'company');
+    
+    expect(hasTitle || hasWork).toBe(true);
 
-      // Test built-in Date methods
-      const dateCompletion = await client.completion( {
-        textDocument: createTextDocumentIdentifier(docUri),
-        position: { line: 16, character: 35 } // After "toDate"
-      });
+    // Test built-in Date methods - this tests TypeScript's built-in completions
+    const dateCompletion = await client.completion( {
+      textDocument: createTextDocumentIdentifier(docUri),
+      position: { line: 16, character: 35 } // After "toDate"
+    });
 
-      console.log('\n✅ Date method completions:');
-      if (dateCompletion) {
-        const items = Array.isArray(dateCompletion) 
-          ? dateCompletion 
-          : (dateCompletion as any).items || [];
-        console.log(`  Found ${items.length} completion items`);
-        
-        const hasToDateString = items.some((item: any) => item.label === 'toDateString');
-        const hasToISOString = items.some((item: any) => item.label === 'toISOString');
-        
-        console.log(`  - toDateString: ${hasToDateString ? '✅' : '❌'}`);
-        console.log(`  - toISOString: ${hasToISOString ? '✅' : '❌'}`);
-      } else {
-        console.log('  No completion items received');
-      }
-
-    } catch (error) {
-      console.log('Completion test error:', (error as Error).message);
-    }
+    expect(dateCompletion).toBeDefined();
+    
+    const dateItems = Array.isArray(dateCompletion) 
+      ? dateCompletion 
+      : (dateCompletion as any).items || [];
+    
+    // Should have Date method completions
+    // We don't strictly require specific methods as this depends on TypeScript version
+    expect(dateItems.length).toBeGreaterThan(0);
+    
+    console.log('\n✅ Date method completions:');
+    console.log(`  Found ${dateItems.length} completion items`);
 
     // Validate that the server processed TypeScript completions without crashing
     expect(client.isProcessAlive()).toBe(true);
@@ -205,26 +200,29 @@ describe('LSP Symbol Insertion and Completion Tests', () => {
 
     await new Promise(resolve => setTimeout(resolve, 2000));
 
-    try {
-      // Test event directive completions
+    // Test event directive completions
       const eventCompletion = await client.completion( {
         textDocument: createTextDocumentIdentifier(docUri),
         position: { line: 11, character: 14 } // After "on:"
       });
 
+      expect(eventCompletion).toBeDefined();
+      
+      const eventItems = Array.isArray(eventCompletion) 
+        ? eventCompletion 
+        : (eventCompletion as any).items || [];
+      
       console.log('✅ Event directive completions:');
-      if (eventCompletion) {
-        const items = Array.isArray(eventCompletion) 
-          ? eventCompletion 
-          : (eventCompletion as any).items || [];
-        console.log(`  Found ${items.length} completion items`);
-        
-        const hasClick = items.some((item: any) => item.label.includes('click'));
-        const hasInput = items.some((item: any) => item.label.includes('input'));
-        
-        console.log(`  - click events: ${hasClick ? '✅' : '❌'}`);
-        console.log(`  - input events: ${hasInput ? '✅' : '❌'}`);
-      }
+      console.log(`  Found ${eventItems.length} completion items`);
+      
+      // Svelte should provide event completions
+      expect(eventItems.length).toBeGreaterThan(0);
+      
+      const hasClick = eventItems.some((item: any) => item.label.includes('click'));
+      const hasInput = eventItems.some((item: any) => item.label.includes('input'));
+      
+      // At least one event type should be present
+      expect(hasClick || hasInput).toBe(true);
 
       // Test binding completions
       const bindCompletion = await client.completion( {
@@ -232,19 +230,23 @@ describe('LSP Symbol Insertion and Completion Tests', () => {
         position: { line: 14, character: 15 } // After "bind:"
       });
 
+      expect(bindCompletion).toBeDefined();
+      
+      const bindItems = Array.isArray(bindCompletion) 
+        ? bindCompletion 
+        : (bindCompletion as any).items || [];
+      
       console.log('\n✅ Binding directive completions:');
-      if (bindCompletion) {
-        const items = Array.isArray(bindCompletion) 
-          ? bindCompletion 
-          : (bindCompletion as any).items || [];
-        console.log(`  Found ${items.length} completion items`);
-        
-        const hasValue = items.some((item: any) => item.label.includes('value'));
-        const hasChecked = items.some((item: any) => item.label.includes('checked'));
-        
-        console.log(`  - value binding: ${hasValue ? '✅' : '❌'}`);
-        console.log(`  - checked binding: ${hasChecked ? '✅' : '❌'}`);
-      }
+      console.log(`  Found ${bindItems.length} completion items`);
+      
+      // Svelte should provide binding completions for input elements
+      expect(bindItems.length).toBeGreaterThan(0);
+      
+      const hasValue = bindItems.some((item: any) => item.label.includes('value'));
+      const hasChecked = bindItems.some((item: any) => item.label.includes('checked'));
+      
+      // At least one binding type should be present
+      expect(hasValue || hasChecked).toBe(true);
 
       // Test variable completions in expressions
       const expressionCompletion = await client.completion( {
@@ -252,25 +254,25 @@ describe('LSP Symbol Insertion and Completion Tests', () => {
         position: { line: 21, character: 15 } // Inside expression {|}
       });
 
+      expect(expressionCompletion).toBeDefined();
+      
+      const exprItems = Array.isArray(expressionCompletion) 
+        ? expressionCompletion 
+        : (expressionCompletion as any).items || [];
+      
       console.log('\n✅ Expression variable completions:');
-      if (expressionCompletion) {
-        const items = Array.isArray(expressionCompletion) 
-          ? expressionCompletion 
-          : (expressionCompletion as any).items || [];
-        console.log(`  Found ${items.length} completion items`);
-        
-        const hasName = items.some((item: any) => item.label === 'name');
-        const hasCount = items.some((item: any) => item.label === 'count');
-        const hasIncrement = items.some((item: any) => item.label === 'increment');
-        
-        console.log(`  - name variable: ${hasName ? '✅' : '❌'}`);
-        console.log(`  - count variable: ${hasCount ? '✅' : '❌'}`);
-        console.log(`  - increment function: ${hasIncrement ? '✅' : '❌'}`);
-      }
+      console.log(`  Found ${exprItems.length} completion items`);
+      
+      // Should have access to script variables in template expressions
+      expect(exprItems.length).toBeGreaterThan(0);
+      
+      const hasName = exprItems.some((item: any) => item.label === 'name');
+      const hasCount = exprItems.some((item: any) => item.label === 'count');
+      const hasIncrement = exprItems.some((item: any) => item.label === 'increment');
+      
+      // At least one variable should be available in the expression
+      expect(hasName || hasCount || hasIncrement).toBe(true);
 
-    } catch (error) {
-      console.log('Svelte completion test error:', (error as Error).message);
-    }
 
     // Validate that the server processed Svelte-specific syntax without crashing
     expect(client.isProcessAlive()).toBe(true);
@@ -295,29 +297,33 @@ describe('LSP Symbol Insertion and Completion Tests', () => {
 
     await new Promise(resolve => setTimeout(resolve, 2000));
 
-    try {
-      // Test auto-import completion
+    // Test auto-import completion
       const autoImportCompletion = await client.completion( {
         textDocument: createTextDocumentIdentifier(docUri),
         position: { line: 2, character: 21 } // After "External"
       });
 
+      expect(autoImportCompletion).toBeDefined();
+      
+      const autoImportItems = Array.isArray(autoImportCompletion) 
+        ? autoImportCompletion 
+        : (autoImportCompletion as any).items || [];
+      
       console.log('✅ Auto-import completions:');
-      if (autoImportCompletion) {
-        const items = Array.isArray(autoImportCompletion) 
-          ? autoImportCompletion 
-          : (autoImportCompletion as any).items || [];
-        console.log(`  Found ${items.length} completion items`);
-        
-        const hasExternalPerson = items.some((item: any) => 
+      console.log(`  Found ${autoImportItems.length} completion items`);
+      
+      // TypeScript should provide completions even for not-yet-imported types
+      // This may not always work depending on server implementation
+      if (autoImportItems.length > 0) {
+        const hasExternalPerson = autoImportItems.some((item: any) => 
           item.label.includes('ExternalPerson')
         );
-        const hasAutoImport = items.some((item: any) => 
+        const hasAutoImport = autoImportItems.some((item: any) => 
           item.additionalTextEdits || item.command
         );
         
-        console.log(`  - ExternalPerson type: ${hasExternalPerson ? '✅' : '❌'}`);
-        console.log(`  - Has auto-import action: ${hasAutoImport ? '✅' : '❌'}`);
+        // If we have items, check for relevant ones
+        expect(hasExternalPerson || hasAutoImport).toBe(true);
       }
 
       // Test already imported type completion
@@ -326,23 +332,24 @@ describe('LSP Symbol Insertion and Completion Tests', () => {
         position: { line: 6, character: 26 } // After "ExternalPer"
       });
 
+      expect(importedCompletion).toBeDefined();
+      
+      const importedItems = Array.isArray(importedCompletion) 
+        ? importedCompletion 
+        : (importedCompletion as any).items || [];
+      
       console.log('\n✅ Imported type completions:');
-      if (importedCompletion) {
-        const items = Array.isArray(importedCompletion) 
-          ? importedCompletion 
-          : (importedCompletion as any).items || [];
-        console.log(`  Found ${items.length} completion items`);
-        
-        const hasExternalPerson = items.some((item: any) => 
-          item.label === 'ExternalPerson'
-        );
-        
-        console.log(`  - ExternalPerson: ${hasExternalPerson ? '✅' : '❌'}`);
-      }
+      console.log(`  Found ${importedItems.length} completion items`);
+      
+      // Should complete already imported types
+      expect(importedItems.length).toBeGreaterThan(0);
+      
+      const hasExternalPerson = importedItems.some((item: any) => 
+        item.label === 'ExternalPerson'
+      );
+      
+      expect(hasExternalPerson).toBe(true);
 
-    } catch (error) {
-      console.log('Auto-import test error:', (error as Error).message);
-    }
 
     // Validate that the server processed auto-import scenarios without crashing
     expect(client.isProcessAlive()).toBe(true);

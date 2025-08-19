@@ -73,36 +73,35 @@ describe('LSP Workspace Symbol Tests', () => {
   });
 
   test('should find workspace symbols across project', async () => {
-    try {
-      const symbols = await client.workspaceSymbol({
-        query: 'Person'
-      });
+    const symbols = await client.workspaceSymbol({
+      query: 'Person'
+    });
 
-      console.log('✅ Workspace Symbol Search for "Person":');
-      if (symbols && Array.isArray(symbols)) {
-        console.log(`  Found ${symbols.length} symbols`);
-        
-        symbols.forEach((symbol: any, index: number) => {
-          console.log(`  ${index + 1}. ${symbol.name} (${symbol.kind}) in ${symbol.location?.uri || symbol.containerName || 'unknown'}`);
-        });
+    // Assert symbols were returned
+    expect(symbols).toBeDefined();
+    expect(Array.isArray(symbols)).toBe(true);
+    expect(symbols).not.toHaveLength(0);
 
-        // Look for expected symbols
-        const hasPersonType = symbols.some((s: any) => 
-          s.name === 'Person' && s.location?.uri?.includes('ComplexType.svelte')
-        );
-        const hasExternalPerson = symbols.some((s: any) => 
-          s.name === 'ExternalPerson' && s.location?.uri?.includes('types.ts')
-        );
+    console.log('✅ Workspace Symbol Search for "Person":');
+    console.log(`  Found ${symbols!.length} symbols`);
+    
+    const symbolsArray = symbols as any[];
+    
+    // Assert we found Person-related symbols
+    const personSymbols = symbolsArray.filter((s: any) => 
+      s.name.includes('Person')
+    );
+    expect(personSymbols.length).toBeGreaterThan(0);
 
-        console.log(`\n  Person type in ComplexType.svelte: ${hasPersonType ? '✅' : '❌'}`);
-        console.log(`  ExternalPerson in types.ts: ${hasExternalPerson ? '✅' : '❌'}`);
-      } else {
-        console.log('  No symbols found or invalid response format');
-      }
+    // Check for specific symbols
+    const hasPersonType = symbolsArray.some((s: any) => 
+      s.name === 'Person' && s.location?.uri?.includes('ComplexType.svelte')
+    );
+    const hasExternalPerson = symbolsArray.some((s: any) => 
+      s.name === 'ExternalPerson' && s.location?.uri?.includes('types.ts')
+    );
 
-    } catch (error) {
-      console.log('Workspace symbol search error:', (error as Error).message);
-    }
+    expect(hasPersonType || hasExternalPerson).toBe(true);
 
     // Validate that the server handled workspace symbol search without crashing
     expect(client.isProcessAlive()).toBe(true);
@@ -110,38 +109,34 @@ describe('LSP Workspace Symbol Tests', () => {
   }, 20000);
 
   test('should find symbols by different search terms', async () => {
-    const searchTerms = ['Job', 'ExternalPerson', 'utils', 'greet'];
+    const searchTerms = [
+      { query: 'Job', expectedInResult: 'Job' },
+      { query: 'ExternalPerson', expectedInResult: 'ExternalPerson' },
+      { query: 'greet', expectedInResult: 'greet' }
+    ];
 
-    for (const term of searchTerms) {
-      try {
-        const symbols = await client.workspaceSymbol({
-          query: term
-        });
+    for (const { query, expectedInResult } of searchTerms) {
+      const symbols = await client.workspaceSymbol({ query });
 
-        console.log(`\n✅ Workspace Symbol Search for "${term}":`);
-        if (symbols && Array.isArray(symbols)) {
-          console.log(`  Found ${symbols.length} symbols`);
-          
-          symbols.slice(0, 5).forEach((symbol: any, index: number) => {
-            const location = symbol.location?.uri ? 
-              symbol.location.uri.split('/').pop() : 
-              'unknown location';
-            console.log(`  ${index + 1}. ${symbol.name} (kind: ${symbol.kind}) in ${location}`);
-          });
-
-          if (symbols.length > 5) {
-            console.log(`  ... and ${symbols.length - 5} more`);
-          }
-        } else {
-          console.log('  No symbols found');
-        }
-
-        // Small delay between requests
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-      } catch (error) {
-        console.log(`  Error searching for "${term}":`, (error as Error).message);
+      console.log(`\n✅ Workspace Symbol Search for "${query}":`);
+      
+      // Assert symbols array is returned
+      expect(symbols).toBeDefined();
+      expect(Array.isArray(symbols)).toBe(true);
+      
+      const symbolsArray = symbols as any[];
+      console.log(`  Found ${symbolsArray.length} symbols`);
+      
+      // For each search term, we expect to find at least one relevant symbol
+      if (query !== 'utils') { // 'utils' might not match anything directly
+        const hasRelevantSymbol = symbolsArray.some((s: any) => 
+          s.name.toLowerCase().includes(expectedInResult.toLowerCase())
+        );
+        expect(hasRelevantSymbol).toBe(true);
       }
+
+      // Small delay between requests
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
 
     // Validate that the server processed multiple search terms without crashing
@@ -157,34 +152,29 @@ describe('LSP Workspace Symbol Tests', () => {
     ];
 
     for (const search of searches) {
-      try {
-        const symbols = await client.workspaceSymbol({
-          query: search.query
-        });
+      const symbols = await client.workspaceSymbol({
+        query: search.query
+      });
 
-        console.log(`\n✅ Workspace Symbol Search for ${search.description}:`);
-        if (symbols && Array.isArray(symbols)) {
-          console.log(`  Found ${symbols.length} symbols`);
-          
-          if (search.query === '') {
-            // Empty query might return all symbols or none depending on server implementation
-            console.log(`  Empty query handling: ${symbols.length > 0 ? 'returns all symbols' : 'returns no symbols'}`);
-          } else if (search.query === '*') {
-            // Wildcard might return many symbols
-            console.log(`  Wildcard handling: ${symbols.length > 0 ? 'returns symbols' : 'not supported'}`);
-          } else {
-            // Non-existent should return empty
-            console.log(`  Non-existent symbol handling: ${symbols.length === 0 ? 'correctly empty' : 'unexpected results'}`);
-          }
-        } else {
-          console.log('  Invalid response or no symbols');
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-      } catch (error) {
-        console.log(`  Error with ${search.description}:`, (error as Error).message);
+      console.log(`\n✅ Workspace Symbol Search for ${search.description}:`);
+      
+      // Assert we always get an array back
+      expect(symbols).toBeDefined();
+      expect(Array.isArray(symbols)).toBe(true);
+      
+      const symbolsArray = symbols as any[];
+      console.log(`  Found ${symbolsArray.length} symbols`);
+      
+      if (search.query === 'NonExistentSymbol') {
+        // Non-existent symbol should return empty or very few results
+        expect(symbolsArray.filter((s: any) => 
+          s.name === 'NonExistentSymbol'
+        ).length).toBe(0);
       }
+      // Empty and wildcard queries behavior varies by server implementation
+      // so we just check they don't crash
+
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
 
     // Validate that the server handled edge case searches without crashing
@@ -194,43 +184,42 @@ describe('LSP Workspace Symbol Tests', () => {
 
   test('should find symbols with fuzzy matching', async () => {
     const fuzzySearches = [
-      { query: 'Pers', expected: 'Person, ExternalPerson' },
-      { query: 'Ext', expected: 'ExternalPerson, ExternalComplexType' },
-      { query: 'Job', expected: 'Job type' },
-      { query: 'Comp', expected: 'ComplexType, ExternalComplexType' }
+      { query: 'Pers', shouldMatch: ['Person', 'ExternalPerson'] },
+      { query: 'Ext', shouldMatch: ['ExternalPerson', 'ExternalComplexType'] },
+      { query: 'Job', shouldMatch: ['Job'] },
+      { query: 'greet', shouldMatch: ['greetUser', 'GreetingOptions'] }
     ];
 
     for (const search of fuzzySearches) {
-      try {
-        const symbols = await client.workspaceSymbol({
-          query: search.query
-        });
+      const symbols = await client.workspaceSymbol({
+        query: search.query
+      });
 
-        console.log(`\n✅ Fuzzy Search for "${search.query}" (expecting ${search.expected}):`);
-        if (symbols && Array.isArray(symbols)) {
-          console.log(`  Found ${symbols.length} symbols`);
-          
-          const symbolNames = symbols.map((s: any) => s.name).join(', ');
-          console.log(`  Symbol names: ${symbolNames || 'none'}`);
-          
-          // Check if we found reasonable fuzzy matches
-          const hasRelevantMatch = symbols.some((s: any) => 
-            s.name.toLowerCase().includes(search.query.toLowerCase()) ||
-            search.query.toLowerCase().split('').every((char: string) => 
-              s.name.toLowerCase().includes(char)
-            )
-          );
-          
-          console.log(`  Has relevant fuzzy matches: ${hasRelevantMatch ? '✅' : '❌'}`);
-        } else {
-          console.log('  No symbols found');
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-      } catch (error) {
-        console.log(`  Fuzzy search error for "${search.query}":`, (error as Error).message);
+      console.log(`\n✅ Fuzzy Search for "${search.query}":`);
+      
+      // Assert we get an array
+      expect(symbols).toBeDefined();
+      expect(Array.isArray(symbols)).toBe(true);
+      
+      const symbolsArray = symbols as any[];
+      console.log(`  Found ${symbolsArray.length} symbols`);
+      
+      if (symbolsArray.length > 0) {
+        const symbolNames = symbolsArray.map((s: any) => s.name);
+        console.log(`  Symbol names: ${symbolNames.slice(0, 5).join(', ')}`);
+        
+        // Check if we found at least one of the expected matches
+        const foundExpectedMatch = search.shouldMatch.some(expected => 
+          symbolNames.some(name => 
+            name.toLowerCase().includes(search.query.toLowerCase()) ||
+            name.toLowerCase().includes(expected.toLowerCase())
+          )
+        );
+        
+        expect(foundExpectedMatch).toBe(true);
       }
+
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
 
     // Validate that the server handled fuzzy searches without crashing
